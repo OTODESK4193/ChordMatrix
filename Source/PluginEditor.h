@@ -20,17 +20,25 @@ public:
 private:
     ChordMatrixAudioProcessor& audioProcessor;
 
+    // Header Components
     juce::ComboBox timeSigNumMenu, timeSigDenMenu, stepSizeMenu, loopBarsMenu;
     juce::Slider tempoSlider;
     juce::Label timeSigLabel{ "", "SIG:" }, stepSizeLabel{ "", "STEP:" }, barsLabel{ "", "BARS:" }, tempoLabel{ "", "BPM:" };
+    juce::Label timeSigSlashLabel{ "", "/" }; // メモリリーク修正済
 
-    juce::Rectangle<float> getCellBounds(int step, int voice, int stepsPerBar);
-    juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars);
-    juce::Rectangle<float> getBeatLaneBounds(int beatIdx, int y, int stepsPerBar, float ppqPerStep);
+    // Inspector Components (Left Panel)
+    int selectedStep = 0;
+    juce::ComboBox stepKeyMenu, stepDegreeMenu, stepTypeMenu, stepTensionMenu;
+    juce::Label stepKeyLabel{ "", "KEY" }, stepDegreeLabel{ "", "DEGREE" }, stepTypeLabel{ "", "TYPE" }, stepTensionLabel{ "", "TENSION" };
 
+    void updateTimeSigLimits();
+    void updateInspector();
     int getStepsPerBar() const;
     float getPpqPerStep() const;
-    void updateTimeSigLimits(); // 要件③: 拍子の分子上限を動的制御
+
+    juce::Rectangle<float> getCellBounds(int step, int voiceRow, int stepsPerBar);
+    juce::Rectangle<float> getStepHeaderBounds(int step, int y, int stepsPerBar);
+    juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars);
 
     bool isDraggingGate = false;
     int dragStep = -1;

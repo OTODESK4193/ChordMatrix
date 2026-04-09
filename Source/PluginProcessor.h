@@ -20,7 +20,7 @@ public:
     const juce::String getName() const override { return "ChordMatrix"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
-    bool isMidiEffect() const override { return false; } // 音声出力のためfalseに変更
+    bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -34,9 +34,7 @@ public:
     void optimizeVoicing();
 
     juce::AudioProcessorValueTreeState apvts;
-
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
-    std::array<ChordMatrix::BeatData, ChordMatrix::TotalBeats> beatSettings;
 
     bool isInternalPlaying = false;
     bool isSyncEnabled = true;
@@ -52,7 +50,6 @@ private:
     double currentNoteOffTimePPQ[ChordMatrix::NumVoices];
     int currentNoteOnPitch[ChordMatrix::NumVoices];
 
-    // 要件①: 簡易シンセ（アロケーションフリー）
     float currentSampleRate = 44100.0f;
     std::array<juce::ADSR, ChordMatrix::NumVoices> adsrs;
     std::array<float, ChordMatrix::NumVoices> phases = { 0 };

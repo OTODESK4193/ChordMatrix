@@ -15,9 +15,8 @@ namespace ChordMatrix
         std::array<VoiceState, 7> voices;
         uint8_t velocity = 100;
         float gateLength = 0.25f;
-    };
 
-    struct BeatData {
+        // 最小Stepごとに独立したコード情報を保持するよう拡張
         int keyRoot = 0;
         int chordDegree = 0;
         int chordType = 0;
@@ -26,7 +25,5 @@ namespace ChordMatrix
 
     static constexpr int NumVoices = 7;
     static constexpr int MaxBars = 16;
-    // 要件⑥: 15/16拍子などの極端なStep増大によるクラッシュを防ぐためバッファを拡張
-    static constexpr int TotalSteps = 1024;
-    static constexpr int TotalBeats = 256;
+    static constexpr int TotalSteps = 1024; // 15/16拍子などの極端な設定でもクラッシュしないよう拡張
 }

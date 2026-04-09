@@ -14,26 +14,6 @@ namespace ChordMatrix
         static juce::StringArray getChordTypeNames() { return { "Maj", "min", "7", "dim", "aug", "sus4" }; }
         static juce::StringArray getTensionNames() { return { "Triad", "7th", "9th", "11th", "13th" }; }
 
-        // 要件④: 狭い幅でも見切れないよう、相対表記と絶対表記の間に改行コード (\n) を挿入
-        static juce::String getChordFullName(int keyRoot, int deg, int type, int tens)
-        {
-            auto degs = getDegreeNames();
-            auto typs = getChordTypeNames();
-            auto tsns = getTensionNames();
-
-            juce::String d = degs[juce::jlimit(0, 6, deg)];
-            juce::String t = (typs[juce::jlimit(0, 5, type)] == "Maj") ? "" : typs[juce::jlimit(0, 5, type)];
-            juce::String s = (tsns[juce::jlimit(0, 4, tens)] == "Triad") ? "" : tsns[juce::jlimit(0, 4, tens)];
-
-            juce::String relName = d + t + s;
-
-            int absRoot = (keyRoot + getDegreeInterval(deg)) % 12;
-            if (absRoot < 0) absRoot += 12;
-            juce::String absName = getNoteName(absRoot) + t + s;
-
-            return relName + "\n(" + absName + ")"; // 改行を挟む
-        }
-
         static int getDegreeInterval(int degree)
         {
             static constexpr int scale[] = { 0, 2, 4, 5, 7, 9, 11 };
@@ -56,13 +36,79 @@ namespace ChordMatrix
             return names[juce::jlimit(0, 11, index)];
         }
 
-        static int getBasePitch(const BeatData& b, int voiceIndex) {
-            int base = 60 + b.keyRoot + getDegreeInterval(b.chordDegree);
-            auto intervals = getChordIntervals(b.chordType, b.tensionType);
+        static int getBasePitch(const StepData& step, int voiceIndex) {
+            int base = 60 + step.keyRoot + getDegreeInterval(step.chordDegree);
+            auto intervals = getChordIntervals(step.chordType, step.tensionType);
             return base + intervals[voiceIndex];
         }
 
-        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, const std::array<BeatData, TotalBeats>& beats, int totalSteps)
+        // --- 要件: リアルタイム逆引きコード判定 ---
+        static juce::String getRecognizedChordName(const StepData& step) {
+            int absRoot = (step.keyRoot + getDegreeInterval(step.chordDegree)) % 12;
+            if (absRoot < 0) absRoot += 12;
+
+            bool has[12] = { false };
+            bool anyActive = false;
+            auto intervals = getChordIntervals(step.chordType, step.tensionType);
+
+            for (int i = 0; i < 7; ++i) {
+                if (step.voices[i].isActive) {
+                    anyActive = true;
+                    int note = (intervals[i] + step.voices[i].accidental) % 12;
+                    if (note < 0) note += 12;
+                    has[note] = true;
+                }
+            }
+
+            if (!anyActive) return "-";
+
+            juce::String type = "??";
+            if (has[0] && has[4] && has[7]) {
+                type = "Maj";
+                if (has[10]) type = "7";
+                if (has[11]) type = "Maj7";
+                if (has[2]) type += "(9)";
+            }
+            else if (has[0] && has[3] && has[7]) {
+                type = "m";
+                if (has[10]) type = "m7";
+                if (has[11]) type = "m(Maj7)";
+                if (has[2]) type += "(9)";
+            }
+            else if (has[0] && has[3] && has[6]) {
+                type = "dim";
+                if (has[9]) type = "dim7";
+                if (has[10]) type = "m7b5";
+            }
+            else if (has[0] && has[4] && has[8]) {
+                type = "aug";
+            }
+            else if (has[0] && has[5] && has[7]) {
+                type = "sus4";
+            }
+            else if (has[0] && has[4] && !has[7]) {
+                type = "Maj(no5)";
+            }
+            else if (has[0] && has[3] && !has[7]) {
+                type = "m(no5)";
+            }
+            else if (has[0] && !has[3] && !has[4] && has[7]) {
+                type = "5";
+            }
+            else if (has[0]) {
+                type = "Custom";
+            }
+
+            if (type == "??" || type == "Custom") return type;
+
+            juce::String absName = getNoteName(absRoot) + type;
+            auto degs = getDegreeNames();
+            juce::String relName = degs[juce::jlimit(0, 6, step.chordDegree)] + type;
+
+            return relName + "\n(" + absName + ")";
+        }
+
+        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps)
         {
             int prevActiveStep = -1;
             for (int s = 0; s < totalSteps; ++s) {
@@ -75,15 +121,15 @@ namespace ChordMatrix
                             int targetPitch = 60;
                             for (int pv = 0; pv < NumVoices; ++pv) {
                                 if (seq[prevActiveStep].voices[pv].isActive) {
-                                    int pPitch = getBasePitch(beats[prevActiveStep / 4], pv) +
+                                    int pPitch = getBasePitch(seq[prevActiveStep], pv) +
                                         seq[prevActiveStep].voices[pv].accidental +
                                         (seq[prevActiveStep].voices[pv].octaveShift * 12);
-                                    int currentBase = getBasePitch(beats[s / 4], v);
+                                    int currentBase = getBasePitch(seq[s], v);
                                     int dist = std::abs(pPitch - currentBase);
                                     if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
                                 }
                             }
-                            int basePitch = getBasePitch(beats[s / 4], v) + seq[s].voices[v].accidental;
+                            int basePitch = getBasePitch(seq[s], v) + seq[s].voices[v].accidental;
                             int bestOct = seq[s].voices[v].octaveShift;
                             int minD = 9999;
                             for (int oct = -2; oct <= 2; ++oct) {
