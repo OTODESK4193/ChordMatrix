@@ -22,7 +22,7 @@ private:
 
     juce::ComboBox timeSigNumMenu, timeSigDenMenu, stepSizeMenu, loopBarsMenu;
     juce::Slider tempoSlider;
-    juce::Label timeSigLabel{ "", "Sig:" }, stepSizeLabel{ "", "Step:" }, barsLabel{ "", "Bars:" }, tempoLabel{ "", "BPM:" };
+    juce::Label timeSigLabel{ "", "SIG:" }, stepSizeLabel{ "", "STEP:" }, barsLabel{ "", "BARS:" }, tempoLabel{ "", "BPM:" };
 
     juce::Rectangle<float> getCellBounds(int step, int voice, int stepsPerBar);
     juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars);
@@ -30,6 +30,7 @@ private:
 
     int getStepsPerBar() const;
     float getPpqPerStep() const;
+    void updateTimeSigLimits(); // 要件③: 拍子の分子上限を動的制御
 
     bool isDraggingGate = false;
     int dragStep = -1;

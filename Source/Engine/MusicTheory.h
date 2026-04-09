@@ -14,7 +14,7 @@ namespace ChordMatrix
         static juce::StringArray getChordTypeNames() { return { "Maj", "min", "7", "dim", "aug", "sus4" }; }
         static juce::StringArray getTensionNames() { return { "Triad", "7th", "9th", "11th", "13th" }; }
 
-        // 要件③: 相対和音名 (Im7) の隣に絶対和音名 (Cm7) を表示するよう拡張
+        // 要件④: 狭い幅でも見切れないよう、相対表記と絶対表記の間に改行コード (\n) を挿入
         static juce::String getChordFullName(int keyRoot, int deg, int type, int tens)
         {
             auto degs = getDegreeNames();
@@ -27,12 +27,11 @@ namespace ChordMatrix
 
             juce::String relName = d + t + s;
 
-            // 絶対音の計算
             int absRoot = (keyRoot + getDegreeInterval(deg)) % 12;
             if (absRoot < 0) absRoot += 12;
             juce::String absName = getNoteName(absRoot) + t + s;
 
-            return relName + " (" + absName + ")";
+            return relName + "\n(" + absName + ")"; // 改行を挟む
         }
 
         static int getDegreeInterval(int degree)

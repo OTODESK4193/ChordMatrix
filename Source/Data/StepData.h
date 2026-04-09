@@ -1,3 +1,4 @@
+// Source/Data/StepData.h
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
@@ -13,7 +14,7 @@ namespace ChordMatrix
     struct StepData {
         std::array<VoiceState, 7> voices;
         uint8_t velocity = 100;
-        float gateLength = 0.8f;
+        float gateLength = 0.25f;
     };
 
     struct BeatData {
@@ -24,8 +25,8 @@ namespace ChordMatrix
     };
 
     static constexpr int NumVoices = 7;
-    static constexpr int NumStepsPerBar = 16;
     static constexpr int MaxBars = 16;
-    static constexpr int TotalSteps = 256;
-    static constexpr int TotalBeats = 64;
+    // 要件⑥: 15/16拍子などの極端なStep増大によるクラッシュを防ぐためバッファを拡張
+    static constexpr int TotalSteps = 1024;
+    static constexpr int TotalBeats = 256;
 }

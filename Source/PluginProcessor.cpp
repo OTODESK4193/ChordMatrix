@@ -34,13 +34,13 @@ ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    // ループ小節数を1〜16小節に変更
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "loopBars", 1 }, "Bars", 1, 16, 4));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "editBar", 1 }, "Edit", 0, 15, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "rootKey", 1 }, "Key", 0, 11, 0));
 
-    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 4, 15, 4));
+    // 拍子の分子(Numerator)の最小値を1に拡張（例: 7/8, 15/16に対応するため）
+    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "stepSize", 1 }, "StepSize", juce::StringArray{ "1/4", "1/8", "1/16" }, 2));
 
@@ -51,12 +51,12 @@ void ChordMatrixAudioProcessor::optimizeVoicing()
 {
     int numBars = (int)*apvts.getRawParameterValue("loopBars");
 
-    // 動的ステップ数の計算
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
     int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
     int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
     int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
     float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
+
     float beatsPerBar = tsNum * (4.0f / tsDen);
     int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
     if (stepsPerBar < 1) stepsPerBar = 1;
@@ -105,7 +105,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         currentBPM = manualBPM;
     }
 
-    // 拍子とStepSizeに基づく動的ステップ計算
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
     int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
     int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
@@ -145,8 +144,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep) {
             const auto& sData = sequenceData[stepInLoop];
-            // BeatDataの参照もStepSizeの解像度に合わせて調整
-            int beatIndex = (stepInLoop * ppqPerStep);
+            // 小数点以下のBeatも正確にマッピング
+            int beatIndex = static_cast<int>(stepInLoop * ppqPerStep);
             const auto& bData = beatSettings[beatIndex];
             int base = 60 + bData.keyRoot + ChordMatrix::MusicTheory::getDegreeInterval(bData.chordDegree);
             auto intervals = ChordMatrix::MusicTheory::getChordIntervals(bData.chordType, bData.tensionType);
