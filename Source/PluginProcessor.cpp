@@ -183,11 +183,18 @@ void ChordMatrixAudioProcessor::getStateInformation(juce::MemoryBlock& d) {
     state.setProperty("seq", juce::MemoryBlock(sequenceData.data(), sizeof(sequenceData)), nullptr);
     std::unique_ptr<juce::XmlElement> xml(state.createXml()); copyXmlToBinary(*xml, d);
 }
+
 void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(d, s));
     if (xml) {
         auto tree = juce::ValueTree::fromXml(*xml); apvts.replaceState(tree);
-        if (tree.hasProperty("seq")) { auto mb = tree.getProperty("seq").getBinaryData(); memcpy(sequenceData.data(), mb->getData(), sizeof(sequenceData)); }
+        if (tree.hasProperty("seq")) {
+            auto mb = tree.getProperty("seq").getBinaryData();
+            // 🚨 クラッシュおよび不具合の完全修正: 
+            // 古い設定(256マス等)を読み込んだ際に配列全体を上書きしてメモリ破壊を起こさないようサイズを制限
+            size_t bytesToCopy = juce::jmin((size_t)mb->getSize(), sizeof(sequenceData));
+            memcpy(sequenceData.data(), mb->getData(), bytesToCopy);
+        }
     }
 }
 void ChordMatrixAudioProcessor::releaseResources() {}

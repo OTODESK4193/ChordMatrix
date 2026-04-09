@@ -10,7 +10,7 @@ namespace ChordMatrix
     class MusicTheory
     {
     public:
-        static juce::StringArray getDegreeNames() { return { "I", "II", "III", "IV", "V", "VI", "VII" }; }
+        static juce::StringArray getDegreeNames() { return { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" }; }
         static juce::StringArray getChordTypeNames() { return { "Maj", "min", "7", "dim", "aug", "sus4" }; }
         static juce::StringArray getTensionNames() { return { "Triad", "7th", "9th", "11th", "13th" }; }
 
@@ -42,74 +42,104 @@ namespace ChordMatrix
             return base + intervals[voiceIndex];
         }
 
-        // --- 要件: リアルタイム逆引きコード判定 ---
-        static juce::String getRecognizedChordName(const StepData& step) {
-            int absRoot = (step.keyRoot + getDegreeInterval(step.chordDegree)) % 12;
-            if (absRoot < 0) absRoot += 12;
-
+        // --- 要件: Gate長を考慮したルックバック・コード判定エンジン ---
+        static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep) {
             bool has[12] = { false };
             bool anyActive = false;
-            auto intervals = getChordIntervals(step.chordType, step.tensionType);
+            int lowestPitch = 9999;
+            int effectiveKeyRoot = seq[targetStep].keyRoot; // デフォルトは現在のステップ
 
-            for (int i = 0; i < 7; ++i) {
-                if (step.voices[i].isActive) {
-                    anyActive = true;
-                    int note = (intervals[i] + step.voices[i].accidental) % 12;
-                    if (note < 0) note += 12;
-                    has[note] = true;
+            // 過去から現在まで走査し、Gateが伸びて現在鳴り続けている音符をすべて集める
+            for (int s = targetStep; s >= 0; --s) {
+                float distBeats = (targetStep - s) * ppqPerStep;
+                bool stepCovers = false;
+
+                for (int v = 0; v < NumVoices; ++v) {
+                    if (seq[s].voices[v].isActive && seq[s].gateLength > distBeats - 0.001f) {
+                        anyActive = true;
+                        stepCovers = true;
+                        int p = getBasePitch(seq[s], v) + seq[s].voices[v].accidental + (seq[s].voices[v].octaveShift * 12);
+                        if (p < lowestPitch) lowestPitch = p;
+
+                        int note = p % 12;
+                        if (note < 0) note += 12;
+                        has[note] = true;
+                    }
+                }
+                // もし過去のStepのGateがここまで伸びていれば、そのStepのKeyRootを相対度数の計算基準とする
+                if (stepCovers) {
+                    effectiveKeyRoot = seq[s].keyRoot;
+                    break;
                 }
             }
 
             if (!anyActive) return "-";
 
+            int absRoot = lowestPitch % 12;
+            if (absRoot < 0) absRoot += 12;
+
+            bool relHas[12] = { false };
+            for (int i = 0; i < 12; ++i) {
+                if (has[i]) {
+                    int rel = (i - absRoot) % 12;
+                    if (rel < 0) rel += 12;
+                    relHas[rel] = true;
+                }
+            }
+
             juce::String type = "??";
-            if (has[0] && has[4] && has[7]) {
+            if (relHas[0] && relHas[4] && relHas[7]) {
                 type = "Maj";
-                if (has[10]) type = "7";
-                if (has[11]) type = "Maj7";
-                if (has[2]) type += "(9)";
+                if (relHas[10]) type = "7";
+                if (relHas[11]) type = "Maj7";
+                if (relHas[2]) type += "(9)";
             }
-            else if (has[0] && has[3] && has[7]) {
+            else if (relHas[0] && relHas[3] && relHas[7]) {
                 type = "m";
-                if (has[10]) type = "m7";
-                if (has[11]) type = "m(Maj7)";
-                if (has[2]) type += "(9)";
+                if (relHas[10]) type = "m7";
+                if (relHas[11]) type = "m(Maj7)";
+                if (relHas[2]) type += "(9)";
             }
-            else if (has[0] && has[3] && has[6]) {
+            else if (relHas[0] && relHas[3] && relHas[6]) {
                 type = "dim";
-                if (has[9]) type = "dim7";
-                if (has[10]) type = "m7b5";
+                if (relHas[9]) type = "dim7";
+                if (relHas[10]) type = "m7b5";
             }
-            else if (has[0] && has[4] && has[8]) {
+            else if (relHas[0] && relHas[4] && relHas[8]) {
                 type = "aug";
             }
-            else if (has[0] && has[5] && has[7]) {
+            else if (relHas[0] && relHas[5] && relHas[7]) {
                 type = "sus4";
             }
-            else if (has[0] && has[4] && !has[7]) {
+            else if (relHas[0] && relHas[4] && !relHas[7]) {
                 type = "Maj(no5)";
             }
-            else if (has[0] && has[3] && !has[7]) {
+            else if (relHas[0] && relHas[3] && !relHas[7]) {
                 type = "m(no5)";
             }
-            else if (has[0] && !has[3] && !has[4] && has[7]) {
+            else if (relHas[0] && !relHas[3] && !relHas[4] && relHas[7]) {
                 type = "5";
             }
-            else if (has[0]) {
+            else if (relHas[0]) {
                 type = "Custom";
             }
 
             if (type == "??" || type == "Custom") return type;
 
             juce::String absName = getNoteName(absRoot) + type;
-            auto degs = getDegreeNames();
-            juce::String relName = degs[juce::jlimit(0, 6, step.chordDegree)] + type;
+
+            int keyRoot = effectiveKeyRoot % 12;
+            if (keyRoot < 0) keyRoot += 12;
+            int diff = (absRoot - keyRoot) % 12;
+            if (diff < 0) diff += 12;
+
+            auto romanNames = getDegreeNames();
+            juce::String relName = romanNames[diff] + type;
 
             return relName + "\n(" + absName + ")";
         }
 
-        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps)
-        {
+        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps) {
             int prevActiveStep = -1;
             for (int s = 0; s < totalSteps; ++s) {
                 bool hasActive = false;
@@ -121,9 +151,7 @@ namespace ChordMatrix
                             int targetPitch = 60;
                             for (int pv = 0; pv < NumVoices; ++pv) {
                                 if (seq[prevActiveStep].voices[pv].isActive) {
-                                    int pPitch = getBasePitch(seq[prevActiveStep], pv) +
-                                        seq[prevActiveStep].voices[pv].accidental +
-                                        (seq[prevActiveStep].voices[pv].octaveShift * 12);
+                                    int pPitch = getBasePitch(seq[prevActiveStep], pv) + seq[prevActiveStep].voices[pv].accidental + (seq[prevActiveStep].voices[pv].octaveShift * 12);
                                     int currentBase = getBasePitch(seq[s], v);
                                     int dist = std::abs(pPitch - currentBase);
                                     if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
