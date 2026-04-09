@@ -34,11 +34,12 @@ ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "loopBars", 1 }, "Bars", juce::StringArray{ "4", "8", "12", "16" }, 0));
+    // ループ小節数を1〜16小節に変更
+    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "loopBars", 1 }, "Bars", 1, 16, 4));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "editBar", 1 }, "Edit", 0, 15, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "rootKey", 1 }, "Key", 0, 11, 0));
-    // 要件④: 拍子と要件⑥: STEPサイズ
+
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 4, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "stepSize", 1 }, "StepSize", juce::StringArray{ "1/4", "1/8", "1/16" }, 2));
@@ -48,16 +49,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
 
 void ChordMatrixAudioProcessor::optimizeVoicing()
 {
-    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
-    int numBars = (loopIdx + 1) * 4;
-    ChordMatrix::MusicTheory::optimizeVoiceLeading(sequenceData, beatSettings, numBars * 16);
+    int numBars = (int)*apvts.getRawParameterValue("loopBars");
+
+    // 動的ステップ数の計算
+    int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
+    int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
+    int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
+    int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
+    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
+    float beatsPerBar = tsNum * (4.0f / tsDen);
+    int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
+    if (stepsPerBar < 1) stepsPerBar = 1;
+
+    ChordMatrix::MusicTheory::optimizeVoiceLeading(sequenceData, beatSettings, numBars * stepsPerBar);
 }
 
 void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int) {
     lastPPQ = 0.0; internalPPQ = 0.0; currentGlobalStep = -1;
     currentSampleRate = static_cast<float>(sampleRate);
 
-    // 優しい音色（エレピ風）のADSR設定
     juce::ADSR::Parameters adsrParams{ 0.05f, 0.3f, 0.4f, 0.8f };
     for (auto& env : adsrs) {
         env.setSampleRate(sampleRate);
@@ -68,7 +78,7 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int) {
 
 void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    buffer.clear(); // オーディオ出力用クリア
+    buffer.clear();
 
     auto* playHead = getPlayHead();
     float hostBPM = 120.0f;
@@ -95,13 +105,19 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         currentBPM = manualBPM;
     }
 
-    // PPQ解像度の計算 (1/4=1.0, 1/8=0.5, 1/16=0.25)
+    // 拍子とStepSizeに基づく動的ステップ計算
+    int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
+    int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
+    int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
     int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
-    double ppqPerStep = (stepSizeIdx == 0) ? 1.0 : (stepSizeIdx == 1) ? 0.5 : 0.25;
+    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 
-    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
-    int numBars = (loopIdx + 1) * 4;
-    int totalStepsInLoop = numBars * 16; // 常に16列のUIベースとして扱う
+    float beatsPerBar = tsNum * (4.0f / tsDen);
+    int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
+    if (stepsPerBar < 1) stepsPerBar = 1;
+
+    int numBars = (int)*apvts.getRawParameterValue("loopBars");
+    int totalStepsInLoop = numBars * stepsPerBar;
 
     if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0.0)) {
         for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
@@ -112,7 +128,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             }
         }
         currentGlobalStep = -1;
-        if (!isSyncEnabled && !isInternalPlaying) internalPPQ = 0.0;
     }
     lastPPQ = ppq;
 
@@ -130,7 +145,9 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep) {
             const auto& sData = sequenceData[stepInLoop];
-            const auto& bData = beatSettings[stepInLoop / 4];
+            // BeatDataの参照もStepSizeの解像度に合わせて調整
+            int beatIndex = (stepInLoop * ppqPerStep);
+            const auto& bData = beatSettings[beatIndex];
             int base = 60 + bData.keyRoot + ChordMatrix::MusicTheory::getDegreeInterval(bData.chordDegree);
             auto intervals = ChordMatrix::MusicTheory::getChordIntervals(bData.chordType, bData.tensionType);
 
@@ -140,13 +157,11 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                         midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
                         adsrs[i].noteOff();
                     }
-
                     int p = juce::jlimit(0, 127, base + intervals[i] + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
                     midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, sData.velocity / 127.0f), 0);
                     currentNoteOnPitch[i] = p;
                     currentNoteOffTimePPQ[i] = ppq + sData.gateLength;
 
-                    // 内蔵シンセの発音
                     float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
                     phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
                     adsrs[i].noteOn();
@@ -156,7 +171,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
     }
 
-    // オーディオ（正弦波）レンダリング
     float* left = buffer.getWritePointer(0);
     float* right = buffer.getWritePointer(1);
     for (int s = 0; s < buffer.getNumSamples(); ++s) {
@@ -168,7 +182,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 if (phases[i] >= juce::MathConstants<float>::twoPi) phases[i] -= juce::MathConstants<float>::twoPi;
             }
         }
-        mix *= 0.1f; // マスターボリューム減衰
+        mix *= 0.1f;
         left[s] += mix;
         if (buffer.getNumChannels() > 1) right[s] += mix;
     }

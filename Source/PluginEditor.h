@@ -20,13 +20,16 @@ public:
 private:
     ChordMatrixAudioProcessor& audioProcessor;
 
-    // UI Components
     juce::ComboBox timeSigNumMenu, timeSigDenMenu, stepSizeMenu, loopBarsMenu;
-    juce::Label timeSigLabel{ "", "Time Sig:" }, stepSizeLabel{ "", "Step:" }, barsLabel{ "", "Bars:" };
+    juce::Slider tempoSlider;
+    juce::Label timeSigLabel{ "", "Sig:" }, stepSizeLabel{ "", "Step:" }, barsLabel{ "", "Bars:" }, tempoLabel{ "", "BPM:" };
 
-    juce::Rectangle<float> getCellBounds(int step, int voice);
-    juce::Rectangle<float> getBarButtonBounds(int barIndex);
-    juce::Rectangle<float> getBeatLaneBounds(int beatIdx, int y);
+    juce::Rectangle<float> getCellBounds(int step, int voice, int stepsPerBar);
+    juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars);
+    juce::Rectangle<float> getBeatLaneBounds(int beatIdx, int y, int stepsPerBar, float ppqPerStep);
+
+    int getStepsPerBar() const;
+    float getPpqPerStep() const;
 
     bool isDraggingGate = false;
     int dragStep = -1;
