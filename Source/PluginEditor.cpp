@@ -15,6 +15,7 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
         box.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffffa500));
         lbl.setColour(juce::Label::textColourId, juce::Colours::grey);
         lbl.attachToComponent(&box, true);
+        lbl.setJustificationType(juce::Justification::centred);
         };
 
     setupCombo(timeSigNumMenu, timeSigLabel);
@@ -32,8 +33,8 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
     stepSizeMenu.onChange = [this] { audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f); };
 
     setupCombo(loopBarsMenu, barsLabel);
-    for (int i = 1; i <= 16; ++i) loopBarsMenu.addItem(juce::String(i), i);
-    loopBarsMenu.onChange = [this] { audioProcessor.apvts.getParameter("loopBars")->setValueNotifyingHost((loopBarsMenu.getSelectedId() - 1) / 15.0f); };
+    loopBarsMenu.addItem("4", 1); loopBarsMenu.addItem("8", 2); loopBarsMenu.addItem("12", 3); loopBarsMenu.addItem("16", 4);
+    loopBarsMenu.onChange = [this] { audioProcessor.apvts.getParameter("loopBars")->setValueNotifyingHost((loopBarsMenu.getSelectedId() - 1) / 3.0f); };
 
     addAndMakeVisible(tempoSlider); addAndMakeVisible(tempoLabel);
     tempoSlider.setSliderStyle(juce::Slider::LinearBar);
@@ -46,36 +47,46 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
     tempoLabel.attachToComponent(&tempoSlider, true);
     tempoSlider.onValueChange = [this] { audioProcessor.apvts.getParameter("tempo")->setValueNotifyingHost((tempoSlider.getValue() - 20.0f) / 280.0f); };
 
-    auto setupInspector = [this, &setupCombo](juce::ComboBox& box, juce::Label& lbl) {
-        setupCombo(box, lbl);
-        lbl.attachToComponent(&box, false);
-        lbl.setJustificationType(juce::Justification::centred);
-        box.onChange = [this, &box, &lbl] {
-            if (selectedStep < 0 || selectedStep >= ChordMatrix::TotalSteps) return;
-            auto& sData = audioProcessor.sequenceData[selectedStep];
-            int val = box.getSelectedId() - 1;
-            if (&box == &stepKeyMenu) sData.keyRoot = val;
-            else if (&box == &stepDegreeMenu) sData.chordDegree = val;
-            else if (&box == &stepTypeMenu) sData.chordType = val;
-            else if (&box == &stepTensionMenu) sData.tensionType = val;
+    // --- 修正: Inspectorのコンボボックス連動バグを解消 ---
+    // ラムダ式による誤作動を防ぐため、各メニューに直接安全なリスナーを登録
+    setupCombo(stepKeyMenu, stepKeyLabel);
+    for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(ChordMatrix::MusicTheory::getNoteName(i), i + 1);
+    stepKeyMenu.onChange = [this] {
+        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
+            audioProcessor.sequenceData[selectedStep].keyRoot = stepKeyMenu.getSelectedId() - 1;
             repaint();
-            };
+        }
         };
 
-    setupInspector(stepKeyMenu, stepKeyLabel);
-    for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(ChordMatrix::MusicTheory::getNoteName(i), i + 1);
-
-    setupInspector(stepDegreeMenu, stepDegreeLabel);
+    setupCombo(stepDegreeMenu, stepDegreeLabel);
     auto degs = ChordMatrix::MusicTheory::getDegreeNames();
     for (int i = 0; i < degs.size(); ++i) stepDegreeMenu.addItem(degs[i], i + 1);
+    stepDegreeMenu.onChange = [this] {
+        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
+            audioProcessor.sequenceData[selectedStep].chordDegree = stepDegreeMenu.getSelectedId() - 1;
+            repaint();
+        }
+        };
 
-    setupInspector(stepTypeMenu, stepTypeLabel);
+    setupCombo(stepTypeMenu, stepTypeLabel);
     auto typs = ChordMatrix::MusicTheory::getChordTypeNames();
     for (int i = 0; i < typs.size(); ++i) stepTypeMenu.addItem(typs[i], i + 1);
+    stepTypeMenu.onChange = [this] {
+        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
+            audioProcessor.sequenceData[selectedStep].chordType = stepTypeMenu.getSelectedId() - 1;
+            repaint();
+        }
+        };
 
-    setupInspector(stepTensionMenu, stepTensionLabel);
+    setupCombo(stepTensionMenu, stepTensionLabel);
     auto tens = ChordMatrix::MusicTheory::getTensionNames();
     for (int i = 0; i < tens.size(); ++i) stepTensionMenu.addItem(tens[i], i + 1);
+    stepTensionMenu.onChange = [this] {
+        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
+            audioProcessor.sequenceData[selectedStep].tensionType = stepTensionMenu.getSelectedId() - 1;
+            repaint();
+        }
+        };
 
     timeSigDenMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigDen") + 1, juce::dontSendNotification);
     updateTimeSigLimits();
@@ -126,7 +137,6 @@ float ChordMatrixAudioProcessorEditor::getPpqPerStep() const {
     return (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 }
 
-// 今のStepを鳴らしている大元のStepを逆算して取得するロジック
 int ChordMatrixAudioProcessorEditor::getEffectiveStep(int targetS) const {
     int eff = targetS;
     float ppq = getPpqPerStep();
@@ -153,6 +163,11 @@ void ChordMatrixAudioProcessorEditor::resized()
     loopBarsMenu.setBounds(1160, 20, 60, 25);
 
     int px = 20, py = 120, pw = 160, ph = 30, pySpace = 60;
+    stepKeyLabel.attachToComponent(&stepKeyMenu, false);
+    stepDegreeLabel.attachToComponent(&stepDegreeMenu, false);
+    stepTypeLabel.attachToComponent(&stepTypeMenu, false);
+    stepTensionLabel.attachToComponent(&stepTensionMenu, false);
+
     stepKeyMenu.setBounds(px, py, pw, ph);
     stepDegreeMenu.setBounds(px, py + pySpace, pw, ph);
     stepTypeMenu.setBounds(px, py + pySpace * 2, pw, ph);
@@ -225,61 +240,52 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
     int stepsPerBeat = juce::roundToInt(beatLengthPpq / ppqPerStep);
     if (stepsPerBeat < 1) stepsPerBeat = 1;
 
-    // --- 【修正①】 全音符などの「表示される文字列が同じ区間」をスマート・グループ化して結合描画 ---
+    // --- 修正: 長い音符（全音符等）のヘッダーを1つの巨大ブロックに結合して描画 ---
     for (int s = 0; s < stepsPerBar; ) {
         int actS = (editBar * stepsPerBar) + s;
         int effS = getEffectiveStep(actS);
         auto& effStep = audioProcessor.sequenceData[effS];
 
-        juce::String keyText = ChordMatrix::MusicTheory::getNoteName(effStep.keyRoot);
-        juce::String chordText = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, actS, ppqPerStep);
-
-        // 同じテキストが続く長さを走査
+        // 連続して「同じ大元の音符(effS)」に属しているStep数をカウント
         int runLength = 1;
         for (int nextS = s + 1; nextS < stepsPerBar; ++nextS) {
             int nextActS = (editBar * stepsPerBar) + nextS;
-            int nextEffS = getEffectiveStep(nextActS);
-            auto& nextEffStep = audioProcessor.sequenceData[nextEffS];
-
-            juce::String nextKeyText = ChordMatrix::MusicTheory::getNoteName(nextEffStep.keyRoot);
-            juce::String nextChordText = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, nextActS, ppqPerStep);
-
-            if (nextKeyText == keyText && nextChordText == chordText) runLength++;
+            if (getEffectiveStep(nextActS) == effS) runLength++;
             else break;
         }
 
         float startX = 260.0f + (s * stepW);
         float runW = runLength * stepW;
 
-        // この結合ブロックの中に selectedStep が含まれているか判定
         bool isSelected = false;
         for (int i = 0; i < runLength; ++i) {
-            if (getEffectiveStep((editBar * stepsPerBar) + s + i) == selectedStep) isSelected = true;
+            if (getEffectiveStep((editBar * stepsPerBar) + s + i) == getEffectiveStep(selectedStep)) isSelected = true;
         }
 
         juce::Rectangle<float> rK(startX, 90.0f, runW, 45.0f);
         g.setColour(isSelected ? juce::Colour(0xff444444) : panelBg);
         g.fillRoundedRectangle(rK.reduced(1.0f), 4.0f);
         g.setColour(textLight);
-        g.drawText(keyText, rK, juce::Justification::centred);
+        g.drawText(ChordMatrix::MusicTheory::getNoteName(effStep.keyRoot), rK, juce::Justification::centred);
 
         juce::Rectangle<float> rC(startX, 140.0f, runW, 45.0f);
         g.setColour(isSelected ? activeColor.withAlpha(0.3f) : activeColor.withAlpha(0.15f));
         g.fillRoundedRectangle(rC.reduced(1.0f), 4.0f);
         g.setColour(activeColor);
-        g.drawFittedText(chordText, rC.reduced(2.0f).toNearestInt(), juce::Justification::centred, 2, 0.7f);
 
-        s += runLength; // 結合した分だけ一気にStepを進める
+        juce::String recognizedName = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, effS, ppqPerStep);
+        g.drawFittedText(recognizedName, rC.reduced(2.0f).toNearestInt(), juce::Justification::centred, 2, 0.7f);
+
+        s += runLength;
     }
 
-    // グリッド線
     for (int s = 0; s <= stepsPerBar; ++s) {
         g.setColour((s % stepsPerBeat == 0) ? juce::Colour(0xff555555) : gridLine);
         g.drawLine(260.0f + (s * stepW), 190.0f, 260.0f + (s * stepW), 600.0f, (s % stepsPerBeat == 0) ? 2.0f : 1.0f);
     }
 
     int loopIdx = (int)*audioProcessor.apvts.getRawParameterValue("loopBars");
-    int numBars = loopIdx;
+    int numBars = (loopIdx + 1) * 4;
     int globalStep = audioProcessor.currentGlobalStep;
     int totalStepsInLoop = numBars * stepsPerBar;
 
@@ -298,6 +304,7 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
         for (int v = 0; v < 7; ++v) {
             auto cell = getCellBounds(s, v, stepsPerBar);
             g.setColour(juce::Colour(0xff121212));
+            // --- 修正: 境界線を描画するために 1.0f の隙間を維持 ---
             g.fillRect(cell.reduced(1.0f, 1.0f));
         }
     }
@@ -313,10 +320,12 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
                 cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
 
                 g.setColour(activeColor);
-                g.fillRect(cell.reduced(0.0f, 1.0f));
+                // --- 修正: 境界線を描画するために 1.0f の隙間を維持 ---
+                // 伸ばしたGateの場合は自動的に巨大な長方形となり、中間の隙間は消えます
+                g.fillRect(cell.reduced(1.0f, 1.0f));
 
                 if (audioProcessor.isPlaying && globalStep >= 0 && actS == (globalStep % totalStepsInLoop)) {
-                    g.setColour(textLight); g.drawRect(cell.reduced(0.0f, 1.0f), 2.0f);
+                    g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
                 }
 
                 juce::String label = "";
@@ -369,10 +378,7 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
         if (e.y >= 90 && e.y < 185) {
             int localStep = (int)((e.x - 260.0f) / stepW);
             int clickedActS = (editBar * stepsPerBar) + localStep;
-
-            // --- 【修正②】 ヘッダーをクリックした際も、大元のStep（Head）を逆算して選択する ---
             selectedStep = getEffectiveStep(clickedActS);
-
             updateInspector();
             repaint();
             return;
@@ -422,7 +428,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
                                 return;
                             }
                             else {
-                                // --- 【修正②】 伸ばしたノートの下敷きをクリックした場合、大元のStep（Head）を選択状態にする ---
                                 selectedStep = getEffectiveStep(actS);
                                 updateInspector();
                                 repaint();

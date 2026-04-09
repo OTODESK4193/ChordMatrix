@@ -15,10 +15,9 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
         phases[i] = 0.0f; phaseDeltas[i] = 0.0f;
     }
 
-    // 【重要】未初期化メモリによる-51バグを防ぐため、完全な初期化を保証
     for (int s = 0; s < ChordMatrix::TotalSteps; ++s) {
         sequenceData[s].gateLength = 0.25f;
-        sequenceData[s].velocity = 100; // 必須！
+        sequenceData[s].velocity = 100;
         sequenceData[s].keyRoot = 0;
         sequenceData[s].chordDegree = 0;
         sequenceData[s].chordType = 0;
@@ -36,7 +35,8 @@ ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "loopBars", 1 }, "Bars", 1, 16, 4));
+    // --- 修正: 4, 8, 12, 16小節の選択肢に変更 ---
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "loopBars", 1 }, "Bars", juce::StringArray{ "4", "8", "12", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "editBar", 1 }, "Edit", 0, 15, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
@@ -47,7 +47,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
 
 void ChordMatrixAudioProcessor::optimizeVoicing()
 {
-    int numBars = (int)*apvts.getRawParameterValue("loopBars");
+    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
+    int numBars = (loopIdx + 1) * 4; // 0->4, 1->8, 2->12, 3->16
+
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
     int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
     int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
@@ -111,7 +113,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
     if (stepsPerBar < 1) stepsPerBar = 1;
 
-    int numBars = (int)*apvts.getRawParameterValue("loopBars");
+    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
+    int numBars = (loopIdx + 1) * 4;
     int totalStepsInLoop = numBars * stepsPerBar;
 
     if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0.0)) {
@@ -151,9 +154,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                     }
                     int p = juce::jlimit(0, 127, base + intervals[i] + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
 
-                    // クラッシュ原因の完全排除（安全なVelocity範囲を保証）
                     float safeVel = juce::jlimit(0.0f, 1.0f, sData.velocity / 127.0f);
-
                     midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
                     currentNoteOnPitch[i] = p;
                     currentNoteOffTimePPQ[i] = ppq + sData.gateLength;
@@ -199,7 +200,6 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
             size_t bytesToCopy = juce::jmin((size_t)mb->getSize(), sizeof(sequenceData));
             memcpy(sequenceData.data(), mb->getData(), bytesToCopy);
 
-            // 【重要】DAWからロードした古いゴミデータ（0xCD）によるクラッシュを完全に除染する
             for (auto& step : sequenceData) {
                 step.velocity = juce::jlimit((uint8_t)0, (uint8_t)127, step.velocity);
                 step.gateLength = juce::jlimit(0.01f, 32.0f, step.gateLength);
