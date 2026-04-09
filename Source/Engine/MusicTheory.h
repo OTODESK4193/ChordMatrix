@@ -1,6 +1,9 @@
+// Source/Engine/MusicTheory.h
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
+#include <cmath>
+#include "../Data/StepData.h"
 
 namespace ChordMatrix
 {
@@ -11,7 +14,8 @@ namespace ChordMatrix
         static juce::StringArray getChordTypeNames() { return { "Maj", "min", "7", "dim", "aug", "sus4" }; }
         static juce::StringArray getTensionNames() { return { "Triad", "7th", "9th", "11th", "13th" }; }
 
-        static juce::String getChordFullName(int deg, int type, int tens)
+        // 要件③: 相対和音名 (Im7) の隣に絶対和音名 (Cm7) を表示するよう拡張
+        static juce::String getChordFullName(int keyRoot, int deg, int type, int tens)
         {
             auto degs = getDegreeNames();
             auto typs = getChordTypeNames();
@@ -21,7 +25,14 @@ namespace ChordMatrix
             juce::String t = (typs[juce::jlimit(0, 5, type)] == "Maj") ? "" : typs[juce::jlimit(0, 5, type)];
             juce::String s = (tsns[juce::jlimit(0, 4, tens)] == "Triad") ? "" : tsns[juce::jlimit(0, 4, tens)];
 
-            return d + t + s;
+            juce::String relName = d + t + s;
+
+            // 絶対音の計算
+            int absRoot = (keyRoot + getDegreeInterval(deg)) % 12;
+            if (absRoot < 0) absRoot += 12;
+            juce::String absName = getNoteName(absRoot) + t + s;
+
+            return relName + " (" + absName + ")";
         }
 
         static int getDegreeInterval(int degree)
@@ -41,7 +52,51 @@ namespace ChordMatrix
 
         static juce::String getNoteName(int n) {
             static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-            return names[juce::jlimit(0, 11, n % 12)];
+            int index = n % 12;
+            if (index < 0) index += 12;
+            return names[juce::jlimit(0, 11, index)];
+        }
+
+        static int getBasePitch(const BeatData& b, int voiceIndex) {
+            int base = 60 + b.keyRoot + getDegreeInterval(b.chordDegree);
+            auto intervals = getChordIntervals(b.chordType, b.tensionType);
+            return base + intervals[voiceIndex];
+        }
+
+        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, const std::array<BeatData, TotalBeats>& beats, int totalSteps)
+        {
+            int prevActiveStep = -1;
+            for (int s = 0; s < totalSteps; ++s) {
+                bool hasActive = false;
+                for (int v = 0; v < NumVoices; ++v) {
+                    if (seq[s].voices[v].isActive) {
+                        hasActive = true;
+                        if (prevActiveStep >= 0) {
+                            int bestDist = 9999;
+                            int targetPitch = 60;
+                            for (int pv = 0; pv < NumVoices; ++pv) {
+                                if (seq[prevActiveStep].voices[pv].isActive) {
+                                    int pPitch = getBasePitch(beats[prevActiveStep / 4], pv) +
+                                        seq[prevActiveStep].voices[pv].accidental +
+                                        (seq[prevActiveStep].voices[pv].octaveShift * 12);
+                                    int currentBase = getBasePitch(beats[s / 4], v);
+                                    int dist = std::abs(pPitch - currentBase);
+                                    if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
+                                }
+                            }
+                            int basePitch = getBasePitch(beats[s / 4], v) + seq[s].voices[v].accidental;
+                            int bestOct = seq[s].voices[v].octaveShift;
+                            int minD = 9999;
+                            for (int oct = -2; oct <= 2; ++oct) {
+                                int d = std::abs((basePitch + oct * 12) - targetPitch);
+                                if (d < minD) { minD = d; bestOct = oct; }
+                            }
+                            seq[s].voices[v].octaveShift = static_cast<int8_t>(bestOct);
+                        }
+                    }
+                }
+                if (hasActive) prevActiveStep = s;
+            }
         }
     };
 }

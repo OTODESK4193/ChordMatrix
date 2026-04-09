@@ -1,3 +1,4 @@
+// Source/PluginProcessor.h
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Data/StepData.h"
@@ -19,7 +20,7 @@ public:
     const juce::String getName() const override { return "ChordMatrix"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
-    bool isMidiEffect() const override { return true; }
+    bool isMidiEffect() const override { return false; } // 音声出力のためfalseに変更
     double getTailLengthSeconds() const override { return 0.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -29,6 +30,8 @@ public:
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
+
+    void optimizeVoicing();
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -44,9 +47,16 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
     double lastPPQ = 0.0;
     double currentNoteOffTimePPQ[ChordMatrix::NumVoices];
     int currentNoteOnPitch[ChordMatrix::NumVoices];
+
+    // 要件①: 簡易シンセ（アロケーションフリー）
+    float currentSampleRate = 44100.0f;
+    std::array<juce::ADSR, ChordMatrix::NumVoices> adsrs;
+    std::array<float, ChordMatrix::NumVoices> phases = { 0 };
+    std::array<float, ChordMatrix::NumVoices> phaseDeltas = { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordMatrixAudioProcessor)
 };
