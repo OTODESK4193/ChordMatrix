@@ -15,8 +15,10 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
         phases[i] = 0.0f; phaseDeltas[i] = 0.0f;
     }
 
+    // 【重要】未初期化メモリによる-51バグを防ぐため、完全な初期化を保証
     for (int s = 0; s < ChordMatrix::TotalSteps; ++s) {
         sequenceData[s].gateLength = 0.25f;
+        sequenceData[s].velocity = 100; // 必須！
         sequenceData[s].keyRoot = 0;
         sequenceData[s].chordDegree = 0;
         sequenceData[s].chordType = 0;
@@ -148,7 +150,11 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                         adsrs[i].noteOff();
                     }
                     int p = juce::jlimit(0, 127, base + intervals[i] + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
-                    midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, sData.velocity / 127.0f), 0);
+
+                    // クラッシュ原因の完全排除（安全なVelocity範囲を保証）
+                    float safeVel = juce::jlimit(0.0f, 1.0f, sData.velocity / 127.0f);
+
+                    midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
                     currentNoteOnPitch[i] = p;
                     currentNoteOffTimePPQ[i] = ppq + sData.gateLength;
 
@@ -190,10 +196,23 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
         auto tree = juce::ValueTree::fromXml(*xml); apvts.replaceState(tree);
         if (tree.hasProperty("seq")) {
             auto mb = tree.getProperty("seq").getBinaryData();
-            // 🚨 クラッシュおよび不具合の完全修正: 
-            // 古い設定(256マス等)を読み込んだ際に配列全体を上書きしてメモリ破壊を起こさないようサイズを制限
             size_t bytesToCopy = juce::jmin((size_t)mb->getSize(), sizeof(sequenceData));
             memcpy(sequenceData.data(), mb->getData(), bytesToCopy);
+
+            // 【重要】DAWからロードした古いゴミデータ（0xCD）によるクラッシュを完全に除染する
+            for (auto& step : sequenceData) {
+                step.velocity = juce::jlimit((uint8_t)0, (uint8_t)127, step.velocity);
+                step.gateLength = juce::jlimit(0.01f, 32.0f, step.gateLength);
+                if (std::isnan(step.gateLength)) step.gateLength = 0.25f;
+                step.keyRoot = juce::jlimit(0, 11, step.keyRoot);
+                step.chordDegree = juce::jlimit(0, 6, step.chordDegree);
+                step.chordType = juce::jlimit(0, 5, step.chordType);
+                step.tensionType = juce::jlimit(0, 4, step.tensionType);
+                for (auto& v : step.voices) {
+                    v.octaveShift = juce::jlimit((int8_t)-4, (int8_t)4, v.octaveShift);
+                    v.accidental = juce::jlimit((int8_t)-2, (int8_t)2, v.accidental);
+                }
+            }
         }
     }
 }

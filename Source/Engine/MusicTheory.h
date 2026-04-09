@@ -23,9 +23,10 @@ namespace ChordMatrix
         static std::array<int, 7> getChordIntervals(int type, int tension)
         {
             std::array<int, 7> intervals = { 0, 4, 7, 11, 14, 17, 21 };
-            if (type == 1)      intervals = { 0, 3, 7, 10, 14, 17, 21 };
-            else if (type == 2) intervals = { 0, 4, 7, 10, 14, 17, 21 };
-            else if (type == 3) intervals = { 0, 3, 6, 9, 13, 16, 20 };
+            int safeType = juce::jlimit(0, 5, type);
+            if (safeType == 1)      intervals = { 0, 3, 7, 10, 14, 17, 21 };
+            else if (safeType == 2) intervals = { 0, 4, 7, 10, 14, 17, 21 };
+            else if (safeType == 3) intervals = { 0, 3, 6, 9, 13, 16, 20 };
             return intervals;
         }
 
@@ -42,20 +43,19 @@ namespace ChordMatrix
             return base + intervals[voiceIndex];
         }
 
-        // --- 要件: Gate長を考慮したルックバック・コード判定エンジン ---
         static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep) {
             bool has[12] = { false };
             bool anyActive = false;
             int lowestPitch = 9999;
-            int effectiveKeyRoot = seq[targetStep].keyRoot; // デフォルトは現在のステップ
+            int effectiveKeyRoot = seq[targetStep].keyRoot;
 
-            // 過去から現在まで走査し、Gateが伸びて現在鳴り続けている音符をすべて集める
             for (int s = targetStep; s >= 0; --s) {
                 float distBeats = (targetStep - s) * ppqPerStep;
                 bool stepCovers = false;
 
                 for (int v = 0; v < NumVoices; ++v) {
-                    if (seq[s].voices[v].isActive && seq[s].gateLength > distBeats - 0.001f) {
+                    // 修正: 浮動小数点の誤差吸収を + 0.001f に変更し、ジャストの長さでブロックしないようにする
+                    if (seq[s].voices[v].isActive && seq[s].gateLength > distBeats + 0.001f) {
                         anyActive = true;
                         stepCovers = true;
                         int p = getBasePitch(seq[s], v) + seq[s].voices[v].accidental + (seq[s].voices[v].octaveShift * 12);
@@ -66,7 +66,6 @@ namespace ChordMatrix
                         has[note] = true;
                     }
                 }
-                // もし過去のStepのGateがここまで伸びていれば、そのStepのKeyRootを相対度数の計算基準とする
                 if (stepCovers) {
                     effectiveKeyRoot = seq[s].keyRoot;
                     break;
@@ -127,7 +126,6 @@ namespace ChordMatrix
             if (type == "??" || type == "Custom") return type;
 
             juce::String absName = getNoteName(absRoot) + type;
-
             int keyRoot = effectiveKeyRoot % 12;
             if (keyRoot < 0) keyRoot += 12;
             int diff = (absRoot - keyRoot) % 12;
