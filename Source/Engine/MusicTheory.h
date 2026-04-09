@@ -11,21 +11,17 @@ namespace ChordMatrix
         static juce::StringArray getChordTypeNames() { return { "Maj", "min", "7", "dim", "aug", "sus4" }; }
         static juce::StringArray getTensionNames() { return { "Triad", "7th", "9th", "11th", "13th" }; }
 
-        static juce::String getChordFullName(int degreeIdx, int typeIdx, int tensionIdx)
+        static juce::String getChordFullName(int deg, int type, int tens)
         {
             auto degs = getDegreeNames();
             auto typs = getChordTypeNames();
-            auto tens = getTensionNames();
+            auto tsns = getTensionNames();
 
-            juce::String d = degs[juce::jlimit(0, 6, degreeIdx)];
-            juce::String t = typs[juce::jlimit(0, 5, typeIdx)];
-            juce::String ts = tens[juce::jlimit(0, 4, tensionIdx)];
+            juce::String d = degs[juce::jlimit(0, 6, deg)];
+            juce::String t = (typs[juce::jlimit(0, 5, type)] == "Maj") ? "" : typs[juce::jlimit(0, 5, type)];
+            juce::String s = (tsns[juce::jlimit(0, 4, tens)] == "Triad") ? "" : tsns[juce::jlimit(0, 4, tens)];
 
-            // 表記の微調整 (Majorの時は空文字にする、Triadの時は数字を書かない等)
-            juce::String typeStr = (t == "Maj") ? "" : t;
-            juce::String tensionStr = (ts == "Triad") ? "" : ts;
-
-            return d + typeStr + tensionStr;
+            return d + t + s;
         }
 
         static int getDegreeInterval(int degree)
@@ -37,11 +33,9 @@ namespace ChordMatrix
         static std::array<int, 7> getChordIntervals(int type, int tension)
         {
             std::array<int, 7> intervals = { 0, 4, 7, 11, 14, 17, 21 };
-            if (type == 1)      intervals = { 0, 3, 7, 10, 14, 17, 21 }; // minor
-            else if (type == 2) intervals = { 0, 4, 7, 10, 14, 17, 21 }; // Dominant
-            else if (type == 3) intervals = { 0, 3, 6, 9, 13, 16, 20 };  // dim
-            else if (type == 4) intervals = { 0, 4, 8, 10, 14, 18, 21 }; // aug
-            else if (type == 5) intervals = { 0, 5, 7, 10, 14, 17, 21 }; // sus4
+            if (type == 1)      intervals = { 0, 3, 7, 10, 14, 17, 21 };
+            else if (type == 2) intervals = { 0, 4, 7, 10, 14, 17, 21 };
+            else if (type == 3) intervals = { 0, 3, 6, 9, 13, 16, 20 };
             return intervals;
         }
 

@@ -6,13 +6,14 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
     apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     lastPPQ = 0.0; internalPPQ = 0.0; isInternalPlaying = false; isSyncEnabled = true; isPlaying = false;
-    currentGlobalStep = -1; displayBPM = 120.0f;
+    currentGlobalStep = -1; currentBPM = 120.0f;
     for (int i = 0; i < ChordMatrix::NumVoices; ++i) { currentNoteOffTimePPQ[i] = -1.0; currentNoteOnPitch[i] = 0; }
     for (int s = 0; s < ChordMatrix::TotalSteps; ++s) {
         for (int v = 0; v < ChordMatrix::NumVoices; ++v) sequenceData[s].voices[v].isActive = false;
-        sequenceData[s].velocity = 100; sequenceData[s].gateLength = 0.8f;
     }
-    for (auto& b : beatSettings) { b.keyRoot = 0; b.chordDegree = 0; b.chordType = 0; b.tensionType = 0; }
+    for (int b = 0; b < ChordMatrix::TotalBeats; ++b) {
+        beatSettings[b].keyRoot = 0; beatSettings[b].chordDegree = 0; beatSettings[b].chordType = 0; beatSettings[b].tensionType = 0;
+    }
 }
 
 ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
@@ -20,10 +21,10 @@ ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "rootKey", 1 }, "Key", 0, 11, 0));
-    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "numBars", 1 }, "Bars", 1, 16, 4));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "loopBars", 1 }, "Bars", juce::StringArray{ "4", "8", "12", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "editBar", 1 }, "Edit", 0, 15, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
+    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "rootKey", 1 }, "Key", 0, 11, 0));
     return { params.begin(), params.end() };
 }
 
@@ -42,7 +43,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     if (isSyncEnabled) {
         if (auto p = pos.getPpqPosition()) ppq = *p;
         isPlaying = pos.getIsPlaying();
-        displayBPM = hostBPM;
+        currentBPM = hostBPM;
     }
     else {
         if (isInternalPlaying) {
@@ -51,11 +52,14 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             ppq = internalPPQ;
         }
         isPlaying = isInternalPlaying;
-        displayBPM = manualBPM;
+        currentBPM = manualBPM;
     }
 
-    int numBars = (int)*apvts.getRawParameterValue("numBars");
-    if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0)) {
+    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
+    int numBars = (loopIdx + 1) * 4;
+    int totalStepsInLoop = numBars * 16;
+
+    if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0.0)) {
         for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
             if (currentNoteOffTimePPQ[i] > 0.0) {
                 midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
@@ -77,7 +81,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     if (!isPlaying) return;
 
     int stepIdx = static_cast<int>(ppq * 4.0);
-    int stepInLoop = stepIdx % (numBars * 16);
+    int stepInLoop = stepIdx % totalStepsInLoop;
 
     if (stepIdx != currentGlobalStep) {
         for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
@@ -88,8 +92,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
         const auto& sData = sequenceData[stepInLoop];
         const auto& bData = beatSettings[stepInLoop / 4];
-        auto intervals = ChordMatrix::MusicTheory::getChordIntervals(bData.chordType, bData.tensionType);
         int base = 60 + bData.keyRoot + ChordMatrix::MusicTheory::getDegreeInterval(bData.chordDegree);
+        auto intervals = ChordMatrix::MusicTheory::getChordIntervals(bData.chordType, bData.tensionType);
 
         for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
             if (sData.voices[i].isActive) {
@@ -103,9 +107,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 }
 
-void ChordMatrixAudioProcessor::prepareToPlay(double, int) { lastPPQ = 0.0; internalPPQ = 0.0; currentGlobalStep = -1; }
-void ChordMatrixAudioProcessor::releaseResources() {}
-bool ChordMatrixAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const { return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo(); }
 void ChordMatrixAudioProcessor::getStateInformation(juce::MemoryBlock& d) {
     auto state = apvts.copyState();
     state.setProperty("seq", juce::MemoryBlock(sequenceData.data(), sizeof(sequenceData)), nullptr);
@@ -120,5 +121,8 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
         if (tree.hasProperty("beat")) { auto mb = tree.getProperty("beat").getBinaryData(); memcpy(beatSettings.data(), mb->getData(), sizeof(beatSettings)); }
     }
 }
+void ChordMatrixAudioProcessor::prepareToPlay(double, int) { lastPPQ = 0.0; internalPPQ = 0.0; currentGlobalStep = -1; }
+void ChordMatrixAudioProcessor::releaseResources() {}
+bool ChordMatrixAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const { return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo(); }
 juce::AudioProcessorEditor* ChordMatrixAudioProcessor::createEditor() { return new ChordMatrixAudioProcessorEditor(*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new ChordMatrixAudioProcessor(); }

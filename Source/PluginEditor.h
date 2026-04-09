@@ -12,13 +12,13 @@ public:
     void resized() override;
     void timerCallback() override;
     void mouseDown(const juce::MouseEvent& event) override;
-    void mouseDrag(const juce::MouseEvent& event) override; // ← 宣言追加
+    void mouseDrag(const juce::MouseEvent& event) override;
 
 private:
     ChordMatrixAudioProcessor& audioProcessor;
     juce::Rectangle<float> getCellBounds(int step, int voice);
     juce::Rectangle<float> getBarButtonBounds(int barIndex);
-    juce::Rectangle<float> getBeatLaneBounds(int beatIdx, int laneY);
+    juce::Rectangle<float> getBeatLaneBounds(int beatIdx, int y);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordMatrixAudioProcessorEditor)
 };

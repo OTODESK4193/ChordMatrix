@@ -32,16 +32,14 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    // データ共有
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
     std::array<ChordMatrix::BeatData, ChordMatrix::TotalBeats> beatSettings;
 
-    // トランスポート
     bool isInternalPlaying = false;
     bool isSyncEnabled = true;
     bool isPlaying = false;
     int currentGlobalStep = -1;
-    float displayBPM = 120.0f;
+    float currentBPM = 120.0f;
     double internalPPQ = 0.0;
 
 private:
