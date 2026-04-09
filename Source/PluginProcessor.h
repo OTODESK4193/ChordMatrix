@@ -1,0 +1,54 @@
+#pragma once
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "Data/StepData.h"
+#include "Engine/MusicTheory.h"
+
+class ChordMatrixAudioProcessor : public juce::AudioProcessor
+{
+public:
+    ChordMatrixAudioProcessor();
+    ~ChordMatrixAudioProcessor() override;
+
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+    const juce::String getName() const override { return "ChordMatrix"; }
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return true; }
+    bool isMidiEffect() const override { return true; }
+    double getTailLengthSeconds() const override { return 0.0; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram(int index) override {}
+    const juce::String getProgramName(int index) override { return {}; }
+    void changeProgramName(int index, const juce::String& newName) override {}
+
+    void getStateInformation(juce::MemoryBlock& destData) override;
+    void setStateInformation(const void* data, int sizeInBytes) override;
+
+    juce::AudioProcessorValueTreeState apvts;
+
+    // データ共有
+    std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
+    std::array<ChordMatrix::BeatData, ChordMatrix::TotalBeats> beatSettings;
+
+    // トランスポート
+    bool isInternalPlaying = false;
+    bool isSyncEnabled = true;
+    bool isPlaying = false;
+    int currentGlobalStep = -1;
+    float displayBPM = 120.0f;
+    double internalPPQ = 0.0;
+
+private:
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    double lastPPQ = 0.0;
+    double currentNoteOffTimePPQ[ChordMatrix::NumVoices];
+    int currentNoteOnPitch[ChordMatrix::NumVoices];
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordMatrixAudioProcessor)
+};
