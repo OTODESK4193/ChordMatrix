@@ -24,7 +24,7 @@ private:
     juce::ComboBox timeSigNumMenu, timeSigDenMenu, stepSizeMenu, loopBarsMenu;
     juce::Slider tempoSlider;
     juce::Label timeSigLabel{ "", "SIG:" }, stepSizeLabel{ "", "STEP:" }, barsLabel{ "", "BARS:" }, tempoLabel{ "", "BPM:" };
-    juce::Label timeSigSlashLabel{ "", "/" }; // メモリリーク修正済
+    juce::Label timeSigSlashLabel{ "", "/" };
 
     // Inspector Components (Left Panel)
     int selectedStep = 0;
@@ -35,6 +35,9 @@ private:
     void updateInspector();
     int getStepsPerBar() const;
     float getPpqPerStep() const;
+
+    // --- 要件解決のためのコア関数: 「今このStepを鳴らしている大元のStep(Head)」を取得 ---
+    int getEffectiveStep(int targetS) const;
 
     juce::Rectangle<float> getCellBounds(int step, int voiceRow, int stepsPerBar);
     juce::Rectangle<float> getStepHeaderBounds(int step, int y, int stepsPerBar);
