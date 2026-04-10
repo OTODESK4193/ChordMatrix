@@ -20,8 +20,7 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
         sequenceData[s].velocity = 100;
         sequenceData[s].keyRoot = 0;
         sequenceData[s].chordDegree = 0;
-        sequenceData[s].chordType = 0;
-        sequenceData[s].tensionType = 0;
+        sequenceData[s].scaleType = 0;
         for (int v = 0; v < ChordMatrix::NumVoices; ++v) {
             sequenceData[s].voices[v].isActive = false;
             sequenceData[s].voices[v].octaveShift = 0;
@@ -35,8 +34,7 @@ ChordMatrixAudioProcessor::~ChordMatrixAudioProcessor() {}
 juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    // --- 修正: 4, 8, 12, 16小節の選択肢に変更 ---
-    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "loopBars", 1 }, "Bars", juce::StringArray{ "4", "8", "12", "16" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "loopBars", 1 }, "Bars", juce::StringArray{ "1", "4", "8", "12", "16" }, 1));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "editBar", 1 }, "Edit", 0, 15, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
@@ -48,7 +46,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
 void ChordMatrixAudioProcessor::optimizeVoicing()
 {
     int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
-    int numBars = (loopIdx + 1) * 4; // 0->4, 1->8, 2->12, 3->16
+    constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
+    int numBars = barsMap[loopIdx];
 
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
     int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
@@ -114,7 +113,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     if (stepsPerBar < 1) stepsPerBar = 1;
 
     int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
-    int numBars = (loopIdx + 1) * 4;
+    constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
+    int numBars = barsMap[loopIdx];
     int totalStepsInLoop = numBars * stepsPerBar;
 
     if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0.0)) {
@@ -143,16 +143,13 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep) {
             const auto& sData = sequenceData[stepInLoop];
-            int base = 60 + sData.keyRoot + ChordMatrix::MusicTheory::getDegreeInterval(sData.chordDegree);
-            auto intervals = ChordMatrix::MusicTheory::getChordIntervals(sData.chordType, sData.tensionType);
-
             for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
                 if (sData.voices[i].isActive) {
                     if (currentNoteOffTimePPQ[i] > 0.0) {
                         midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
                         adsrs[i].noteOff();
                     }
-                    int p = juce::jlimit(0, 127, base + intervals[i] + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
+                    int p = juce::jlimit(0, 127, ChordMatrix::MusicTheory::getBasePitch(sData, i) + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
 
                     float safeVel = juce::jlimit(0.0f, 1.0f, sData.velocity / 127.0f);
                     midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
@@ -206,8 +203,7 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
                 if (std::isnan(step.gateLength)) step.gateLength = 0.25f;
                 step.keyRoot = juce::jlimit(0, 11, step.keyRoot);
                 step.chordDegree = juce::jlimit(0, 6, step.chordDegree);
-                step.chordType = juce::jlimit(0, 5, step.chordType);
-                step.tensionType = juce::jlimit(0, 4, step.tensionType);
+                step.scaleType = juce::jlimit(0, 8, step.scaleType);
                 for (auto& v : step.voices) {
                     v.octaveShift = juce::jlimit((int8_t)-4, (int8_t)4, v.octaveShift);
                     v.accidental = juce::jlimit((int8_t)-2, (int8_t)2, v.accidental);
