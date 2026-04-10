@@ -6,13 +6,15 @@
 
 namespace ChordMatrix
 {
-    struct VoiceState {
+    struct VoiceState
+    {
         bool isActive = false;
         int8_t octaveShift = 0;
         int8_t accidental = 0;
     };
 
-    struct StepData {
+    struct StepData
+    {
         std::array<VoiceState, 7> voices;
         uint8_t velocity = 100;
         float gateLength = 0.25f;
@@ -20,7 +22,7 @@ namespace ChordMatrix
         int keyRoot = 0;
         int chordDegree = 0;
         int scaleType = 0;
-        int inversion = 0; // 追加: 展開形 (0=基本形, 1=第1展開形...)
+        int inversion = 0;
     };
 
     static constexpr int NumVoices = 7;

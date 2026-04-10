@@ -26,19 +26,20 @@ private:
     juce::Label timeSigLabel{ "", "SIG:" }, stepSizeLabel{ "", "STEP:" }, barsLabel{ "", "BARS:" }, tempoLabel{ "", "BPM:" };
     juce::Label timeSigSlashLabel{ "", "/" };
 
-    // Scaleベースのコンボボックスとボイシング設定
     juce::ComboBox stepKeyMenu, stepScaleMenu, stepDegreeMenu, voicingMenu;
     juce::Label stepKeyLabel{ "", "KEY" }, stepScaleLabel{ "", "SCALE" }, stepDegreeLabel{ "", "DEGREE" }, voicingLabel{ "", "VOICING" };
 
     bool isFollowMode = false;
-    int selectedStep = 0;
-    int selectedVoice = -1; // 選択された行(ピッチ・プレビュー用)
+    bool isProgressionMode = false; // Progressionブラウザ切り替え用フラグ
 
-    // UI大改修: 1STEPを大型正方形(50px)とし、全体の座標もシフト
+    int selectedStep = 0;
+    int selectedVoice = -1;
+
+    // UI大改修: SEQ全体の幅を固定し、ステップ解像度に応じて動的に拡大・縮小を防ぐ
     const float cellHeight = 50.0f;
-    const float stepW = 50.0f;
-    const float gridX = 240.0f;
-    const float gridY = 220.0f; // Inversionレーンの分だけ下へシフト
+    const float seqTotalWidth = 800.0f; // SEQの全体幅を800pxに完全固定
+    const float gridX = 300.0f;         // Inspectorとの重なりを回避するため右に大きくシフト
+    const float gridY = 220.0f;
     const float headerHeight = 60.0f;
 
     void updateTimeSigLimits();
@@ -47,10 +48,9 @@ private:
     float getPpqPerStep() const;
     int getEffectiveStep(int targetS) const;
 
-    juce::Rectangle<float> getCellBounds(int step, int voiceRow);
-    juce::Rectangle<float> getStepHeaderBounds(int step);
-    juce::Rectangle<float> getInversionBounds(int step);
-    juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars, int stepsPerBar);
+    juce::Rectangle<float> getCellBounds(int step, int voiceRow, float stepW);
+    juce::Rectangle<float> getStepHeaderBounds(int step, float stepW);
+    juce::Rectangle<float> getBarButtonBounds(int barIndex);
 
     bool isDraggingGate = false;
     int dragStep = -1;

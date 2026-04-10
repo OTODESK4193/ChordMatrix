@@ -45,8 +45,8 @@ public:
     float currentBPM = 120.0f;
     double internalPPQ = 0.0;
 
-    // 追加: UIからのプレビュー発音要求を受け取るスレッドセーフなフラグ
-    std::atomic<int> previewNoteOn{ -1 };
+    std::atomic<int> previewNotes[7];
+    std::atomic<bool> triggerPreview{ false };
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -56,14 +56,14 @@ private:
     int currentNoteOnPitch[ChordMatrix::NumVoices];
 
     float currentSampleRate = 44100.0f;
+
     std::array<juce::ADSR, ChordMatrix::NumVoices> adsrs;
     std::array<float, ChordMatrix::NumVoices> phases = { 0 };
     std::array<float, ChordMatrix::NumVoices> phaseDeltas = { 0 };
 
-    // 追加: プレビュー専用の第8ボイス（シーケンス再生を阻害しないための独立したオシレーター）
-    juce::ADSR previewAdsr;
-    float previewPhase = 0.0f;
-    float previewPhaseDelta = 0.0f;
+    std::array<juce::ADSR, 7> previewAdsrs;
+    std::array<float, 7> previewPhases = { 0 };
+    std::array<float, 7> previewPhaseDeltas = { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordMatrixAudioProcessor)
 };

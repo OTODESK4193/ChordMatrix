@@ -11,14 +11,16 @@ namespace ChordMatrix
     class MusicTheory
     {
     public:
-        static juce::StringArray getDegreeNames() {
+        static juce::StringArray getDegreeNames()
+        {
             juce::StringArray arr;
             const char* names[] = { "I", "II", "III", "IV", "V", "VI", "VII" };
             for (int i = 0; i < 7; ++i) arr.add(juce::String(names[i]));
             return arr;
         }
 
-        static juce::StringArray getScaleNames() {
+        static juce::StringArray getScaleNames()
+        {
             juce::StringArray arr;
             const char* names[] = {
                 "Major (Ionian)", "Natural Minor", "Harmonic Minor", "Melodic Minor",
@@ -31,28 +33,31 @@ namespace ChordMatrix
         static std::array<int, 7> getScaleIntervals(int scaleType)
         {
             int safeType = juce::jlimit(0, 8, scaleType);
-            switch (safeType) {
-            case 0: return { 0, 2, 4, 5, 7, 9, 11 }; // Major (Ionian)
-            case 1: return { 0, 2, 3, 5, 7, 8, 10 }; // Natural Minor
-            case 2: return { 0, 2, 3, 5, 7, 8, 11 }; // Harmonic Minor
-            case 3: return { 0, 2, 3, 5, 7, 9, 11 }; // Melodic Minor
-            case 4: return { 0, 2, 3, 5, 7, 9, 10 }; // Dorian
-            case 5: return { 0, 1, 3, 5, 7, 8, 10 }; // Phrygian
-            case 6: return { 0, 2, 4, 6, 7, 9, 11 }; // Lydian
-            case 7: return { 0, 2, 4, 5, 7, 9, 10 }; // Mixolydian
-            case 8: return { 0, 1, 3, 5, 6, 8, 10 }; // Locrian
+            switch (safeType)
+            {
+            case 0: return { 0, 2, 4, 5, 7, 9, 11 };
+            case 1: return { 0, 2, 3, 5, 7, 8, 10 };
+            case 2: return { 0, 2, 3, 5, 7, 8, 11 };
+            case 3: return { 0, 2, 3, 5, 7, 9, 11 };
+            case 4: return { 0, 2, 3, 5, 7, 9, 10 };
+            case 5: return { 0, 1, 3, 5, 7, 8, 10 };
+            case 6: return { 0, 2, 4, 6, 7, 9, 11 };
+            case 7: return { 0, 2, 4, 5, 7, 9, 10 };
+            case 8: return { 0, 1, 3, 5, 6, 8, 10 };
             default: return { 0, 2, 4, 5, 7, 9, 11 };
             }
         }
 
-        static juce::String getNoteName(int n) {
+        static juce::String getNoteName(int n)
+        {
             static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
             int index = n % 12;
             if (index < 0) index += 12;
             return juce::String(names[juce::jlimit(0, 11, index)]);
         }
 
-        static int getBasePitch(const StepData& step, int voiceIndex) {
+        static int getBasePitch(const StepData& step, int voiceIndex)
+        {
             auto scale = getScaleIntervals(step.scaleType);
             int baseRoot = 60 + step.keyRoot;
             int degreeIndex = juce::jlimit(0, 6, step.chordDegree);
@@ -63,10 +68,13 @@ namespace ChordMatrix
             return baseRoot + scale[scaleIndex] + (octaveOffset * 12);
         }
 
-        static int getVoicedPitches(const StepData& step, int voicingMode, std::array<int, 7>& outPitches) {
+        static int getVoicedPitches(const StepData& step, int voicingMode, std::array<int, 7>& outPitches)
+        {
             int count = 0;
-            for (int v = 0; v < NumVoices; ++v) {
-                if (step.voices[v].isActive) {
+            for (int v = 0; v < NumVoices; ++v)
+            {
+                if (step.voices[v].isActive)
+                {
                     outPitches[count++] = getBasePitch(step, v) + step.voices[v].accidental + (step.voices[v].octaveShift * 12);
                 }
             }
@@ -88,31 +96,41 @@ namespace ChordMatrix
                 outPitches[0] -= 12;
                 outPitches[count - 1] += 12;
             }
-            std::sort(outPitches.begin(), outPitches.begin() + count);
 
+            std::sort(outPitches.begin(), outPitches.begin() + count);
             return count;
         }
 
-        static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int voicingMode) {
+        static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int voicingMode)
+        {
             int effS = targetStep;
             bool anyActive = false;
-            for (int s = targetStep; s >= 0; --s) {
+
+            for (int s = targetStep; s >= 0; --s)
+            {
                 float distBeats = (targetStep - s) * ppqPerStep;
                 bool stepCovers = false;
-                for (int v = 0; v < NumVoices; ++v) {
-                    if (seq[s].voices[v].isActive && seq[s].gateLength > distBeats + 0.001f) {
-                        stepCovers = true; anyActive = true;
+                for (int v = 0; v < NumVoices; ++v)
+                {
+                    if (seq[s].voices[v].isActive && seq[s].gateLength > distBeats + 0.001f)
+                    {
+                        stepCovers = true;
+                        anyActive = true;
                     }
                 }
                 if (stepCovers) { effS = s; break; }
             }
+
             if (!anyActive) return juce::String("-");
 
             const auto& step = seq[effS];
             bool has[12] = { false };
             int lowestRaw = 9999;
-            for (int v = 0; v < NumVoices; ++v) {
-                if (step.voices[v].isActive) {
+
+            for (int v = 0; v < NumVoices; ++v)
+            {
+                if (step.voices[v].isActive)
+                {
                     int p = getBasePitch(step, v) + step.voices[v].accidental + (step.voices[v].octaveShift * 12);
                     if (p < lowestRaw) lowestRaw = p;
                     has[(p % 12 + 12) % 12] = true;
@@ -121,7 +139,10 @@ namespace ChordMatrix
 
             int absRoot = lowestRaw % 12;
             bool relHas[12] = { false };
-            for (int i = 0; i < 12; ++i) if (has[i]) relHas[(i - absRoot + 12) % 12] = true;
+            for (int i = 0; i < 12; ++i)
+            {
+                if (has[i]) relHas[(i - absRoot + 12) % 12] = true;
+            }
 
             juce::String type = "??";
             if (relHas[0] && relHas[4] && relHas[7]) {
@@ -141,9 +162,7 @@ namespace ChordMatrix
             else if (relHas[0]) type = "Custom";
 
             if (type != "??" && type != "Custom") {
-                if (relHas[2]) type += "(9)";
-                if (relHas[5]) type += "(11)";
-                if (relHas[9]) type += "(13)";
+                if (relHas[2]) type += "(9)"; if (relHas[5]) type += "(11)"; if (relHas[9]) type += "(13)";
             }
             if (type == "??" || type == "Custom") return type;
 
@@ -155,41 +174,63 @@ namespace ChordMatrix
 
             std::array<int, 7> voicedPitches;
             int activeCount = getVoicedPitches(step, voicingMode, voicedPitches);
-            if (activeCount > 0) {
+            if (activeCount > 0)
+            {
                 int lowestVoicedAbs = voicedPitches[0] % 12;
-                if (lowestVoicedAbs != absRoot) {
+                if (lowestVoicedAbs != absRoot)
+                {
                     juce::String slash = "on" + getNoteName(lowestVoicedAbs);
-                    relName += slash; absName += slash;
+                    relName += slash;
+                    absName += slash;
                 }
             }
+
             return relName + "\n(" + absName + ")";
         }
 
-        // 欠落していたオプティマイズ関数を復活
-        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps) {
+        static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps)
+        {
             int prevActiveStep = -1;
-            for (int s = 0; s < totalSteps; ++s) {
+            for (int s = 0; s < totalSteps; ++s)
+            {
                 bool hasActive = false;
-                for (int v = 0; v < NumVoices; ++v) {
-                    if (seq[s].voices[v].isActive) {
+                for (int v = 0; v < NumVoices; ++v)
+                {
+                    if (seq[s].voices[v].isActive)
+                    {
                         hasActive = true;
-                        if (prevActiveStep >= 0) {
+                        if (prevActiveStep >= 0)
+                        {
                             int bestDist = 9999;
                             int targetPitch = 60;
-                            for (int pv = 0; pv < NumVoices; ++pv) {
-                                if (seq[prevActiveStep].voices[pv].isActive) {
+
+                            for (int pv = 0; pv < NumVoices; ++pv)
+                            {
+                                if (seq[prevActiveStep].voices[pv].isActive)
+                                {
                                     int pPitch = getBasePitch(seq[prevActiveStep], pv) + seq[prevActiveStep].voices[pv].accidental + (seq[prevActiveStep].voices[pv].octaveShift * 12);
                                     int currentBase = getBasePitch(seq[s], v);
                                     int dist = std::abs(pPitch - currentBase);
-                                    if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
+                                    if (dist < bestDist)
+                                    {
+                                        bestDist = dist;
+                                        targetPitch = pPitch;
+                                    }
                                 }
                             }
+
                             int basePitch = getBasePitch(seq[s], v) + seq[s].voices[v].accidental;
                             int bestOct = seq[s].voices[v].octaveShift;
                             int minD = 9999;
-                            for (int oct = -2; oct <= 2; ++oct) {
+
+                            for (int oct = -2; oct <= 2; ++oct)
+                            {
                                 int d = std::abs((basePitch + oct * 12) - targetPitch);
-                                if (d < minD) { minD = d; bestOct = oct; }
+                                if (d < minD)
+                                {
+                                    minD = d;
+                                    bestOct = oct;
+                                }
                             }
                             seq[s].voices[v].octaveShift = static_cast<int8_t>(bestOct);
                         }
