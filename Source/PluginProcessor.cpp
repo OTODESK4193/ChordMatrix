@@ -11,13 +11,11 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
     isInternalPlaying = false;
     isSyncEnabled = true;
     isPlaying = false;
+    wasPlaying = false;
     currentGlobalStep = -1;
     currentBPM = 120.0f;
 
-    for (int i = 0; i < 7; ++i)
-    {
-        previewNotes[i].store(-1);
-    }
+    for (int i = 0; i < 7; ++i) previewNotes[i].store(-1);
 
     for (int i = 0; i < ChordMatrix::NumVoices; ++i)
     {
@@ -35,6 +33,8 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
         sequenceData[s].chordDegree = 0;
         sequenceData[s].scaleType = 0;
         sequenceData[s].inversion = 0;
+        sequenceData[s].voicingMode = 0;
+        sequenceData[s].shift = 0;
 
         for (int v = 0; v < ChordMatrix::NumVoices; ++v)
         {
@@ -56,7 +56,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "stepSize", 1 }, "StepSize", juce::StringArray{ "1/4", "1/8", "1/16" }, 2));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "voicingMode", 1 }, "Voicing", juce::StringArray{ "Close", "Drop 2", "Drop 3", "Spread" }, 0));
 
     return { params.begin(), params.end() };
 }
@@ -74,7 +73,6 @@ void ChordMatrixAudioProcessor::optimizeVoicing()
     float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
     float beatsPerBar = tsNum * (4.0f / tsDen);
     int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
-
     if (stepsPerBar < 1) stepsPerBar = 1;
 
     ChordMatrix::MusicTheory::optimizeVoiceLeading(sequenceData, numBars * stepsPerBar);
@@ -87,8 +85,7 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
     currentGlobalStep = -1;
     currentSampleRate = static_cast<float>(sampleRate);
 
-    // 修正: キレのあるコード演奏のため、AttackとReleaseを極めてタイトに設定
-    juce::ADSR::Parameters adsrParams{ 0.02f, 0.2f, 0.5f, 0.1f };
+    juce::ADSR::Parameters adsrParams{ 0.01f, 0.2f, 0.6f, 0.1f };
     for (auto& env : adsrs)
     {
         env.setSampleRate(sampleRate);
@@ -96,6 +93,7 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
         env.reset();
     }
 
+    // 修正: プレビューのSustainを0.0にして鳴りっぱなしを防止
     juce::ADSR::Parameters prevParams{ 0.01f, 0.5f, 0.0f, 0.1f };
     for (auto& env : previewAdsrs)
     {
@@ -138,8 +136,20 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         currentBPM = manualBPM;
     }
 
+    int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
+    int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
+    int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
+    int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
+    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
+
+    float stepDurationSec = (60.0f / currentBPM) * (4.0f / tsDen) * (ppqPerStep / (4.0f / tsDen));
+    if (tsDenIdx == 0) stepDurationSec = (60.0f / currentBPM) * ppqPerStep;
+    float dynamicDecay = juce::jlimit(0.05f, 2.0f, stepDurationSec * 0.75f);
+
+    // プレビューのトリガー処理
     if (triggerPreview.exchange(false))
     {
+        juce::ADSR::Parameters prevParams{ 0.01f, dynamicDecay, 0.0f, 0.1f };
         for (int i = 0; i < 7; ++i)
         {
             int p = previewNotes[i].load();
@@ -147,6 +157,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             {
                 float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
                 previewPhaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
+                previewAdsrs[i].setParameters(prevParams);
                 previewAdsrs[i].noteOn();
             }
             else
@@ -155,12 +166,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             }
         }
     }
-
-    int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
-    int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
-    int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-    int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
-    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 
     float beatsPerBar = tsNum * (4.0f / tsDen);
     int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
@@ -171,7 +176,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     int numBars = barsMap[loopIdx];
     int totalStepsInLoop = numBars * stepsPerBar;
 
-    if (ppq < lastPPQ || (!isPlaying && lastPPQ > 0.0))
+    if ((isPlaying && ppq < lastPPQ) || (!isPlaying && wasPlaying))
     {
         for (int i = 0; i < ChordMatrix::NumVoices; ++i)
         {
@@ -179,12 +184,14 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             {
                 midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
                 currentNoteOffTimePPQ[i] = -1.0;
-                adsrs[i].noteOff();
             }
+            adsrs[i].noteOff();
         }
+        for (int i = 0; i < 7; ++i) previewAdsrs[i].noteOff();
         currentGlobalStep = -1;
     }
 
+    wasPlaying = isPlaying;
     lastPPQ = ppq;
 
     for (int i = 0; i < ChordMatrix::NumVoices; ++i)
@@ -205,10 +212,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         if (stepIdx != currentGlobalStep)
         {
             const auto& sData = sequenceData[stepInLoop];
-            int voicingMode = (int)*apvts.getRawParameterValue("voicingMode");
-
             std::array<int, 7> vps;
-            int count = ChordMatrix::MusicTheory::getVoicedPitches(sData, voicingMode, vps);
+            int count = ChordMatrix::MusicTheory::getVoicedPitches(sData, vps);
 
             for (int i = 0; i < ChordMatrix::NumVoices; ++i)
             {
@@ -219,6 +224,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                     currentNoteOffTimePPQ[i] = -1.0;
                 }
             }
+
+            juce::ADSR::Parameters mainParams{ 0.01f, dynamicDecay, 0.6f, 0.1f };
 
             for (int i = 0; i < count; ++i)
             {
@@ -231,6 +238,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
                 float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
                 phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
+
+                adsrs[i].setParameters(mainParams);
                 adsrs[i].noteOn();
             }
             currentGlobalStep = stepIdx;
@@ -298,6 +307,8 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s)
                 step.chordDegree = juce::jlimit(0, 6, step.chordDegree);
                 step.scaleType = juce::jlimit(0, 8, step.scaleType);
                 step.inversion = juce::jlimit(0, 6, step.inversion);
+                step.voicingMode = juce::jlimit(0, 3, step.voicingMode);
+                step.shift = juce::jlimit(-24, 24, step.shift);
 
                 for (auto& v : step.voices)
                 {

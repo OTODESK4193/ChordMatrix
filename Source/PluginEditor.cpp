@@ -26,11 +26,13 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
     timeSigDenMenu.onChange = [this] {
         audioProcessor.apvts.getParameter("timeSigDen")->setValueNotifyingHost((timeSigDenMenu.getSelectedId() - 1) / 2.0f);
         updateTimeSigLimits();
+        updateStepSizeMenu();
         };
 
     setupCombo(stepSizeMenu, stepSizeLabel);
-    stepSizeMenu.addItem("1/4", 1); stepSizeMenu.addItem("1/8", 2); stepSizeMenu.addItem("1/16", 3);
-    stepSizeMenu.onChange = [this] { audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f); };
+    stepSizeMenu.onChange = [this] {
+        audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f);
+        };
 
     setupCombo(loopBarsMenu, barsLabel);
     loopBarsMenu.addItem("1", 1); loopBarsMenu.addItem("4", 2); loopBarsMenu.addItem("8", 3); loopBarsMenu.addItem("12", 4); loopBarsMenu.addItem("16", 5);
@@ -47,46 +49,66 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
     tempoLabel.attachToComponent(&tempoSlider, true);
     tempoSlider.onValueChange = [this] { audioProcessor.apvts.getParameter("tempo")->setValueNotifyingHost((tempoSlider.getValue() - 20.0f) / 280.0f); };
 
+    auto applyScope = [this](int scopeType, auto setterFunction) {
+        if (selectedStep < 0) return;
+        int spb = getStepsPerBar();
+
+        if (scopeType == 0) { // STEP
+            setterFunction(selectedStep);
+        }
+        else if (scopeType == 1) { // BAR
+            int barStart = (selectedStep / spb) * spb;
+            for (int i = 0; i < spb; ++i) setterFunction(barStart + i);
+        }
+        else { // ALL
+            for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i);
+        }
+        repaint();
+        };
+
+    // 縦5行のインスペクター設定
     setupCombo(stepKeyMenu, stepKeyLabel);
     for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(ChordMatrix::MusicTheory::getNoteName(i), i + 1);
-    stepKeyMenu.onChange = [this] {
-        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
-            audioProcessor.sequenceData[selectedStep].keyRoot = stepKeyMenu.getSelectedId() - 1;
-            repaint();
-        }
-        };
+    stepKeyMenu.onChange = [this, applyScope] { applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; }); };
 
     setupCombo(stepScaleMenu, stepScaleLabel);
     auto scales = ChordMatrix::MusicTheory::getScaleNames();
     for (int i = 0; i < scales.size(); ++i) stepScaleMenu.addItem(scales[i], i + 1);
-    stepScaleMenu.onChange = [this] {
-        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
-            audioProcessor.sequenceData[selectedStep].scaleType = stepScaleMenu.getSelectedId() - 1;
-            repaint();
-        }
-        };
+    stepScaleMenu.onChange = [this, applyScope] { applyScope(scopeScale, [this](int s) { audioProcessor.sequenceData[s].scaleType = stepScaleMenu.getSelectedId() - 1; }); };
 
     setupCombo(stepDegreeMenu, stepDegreeLabel);
     auto degs = ChordMatrix::MusicTheory::getDegreeNames();
     for (int i = 0; i < degs.size(); ++i) stepDegreeMenu.addItem(degs[i], i + 1);
-    stepDegreeMenu.onChange = [this] {
-        if (selectedStep >= 0 && selectedStep < ChordMatrix::TotalSteps) {
-            audioProcessor.sequenceData[selectedStep].chordDegree = stepDegreeMenu.getSelectedId() - 1;
-            repaint();
-        }
-        };
+    stepDegreeMenu.onChange = [this, applyScope] { applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; }); };
 
     setupCombo(voicingMenu, voicingLabel);
     voicingMenu.addItem("Close", 1); voicingMenu.addItem("Drop 2", 2); voicingMenu.addItem("Drop 3", 3); voicingMenu.addItem("Spread", 4);
-    voicingMenu.onChange = [this] {
-        audioProcessor.apvts.getParameter("voicingMode")->setValueNotifyingHost((voicingMenu.getSelectedId() - 1) / 3.0f);
-        repaint();
+    voicingMenu.onChange = [this, applyScope] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
+
+    // Shift用: IncDecButtons（数値の横に＋－ボタン）スタイルを採用
+    addAndMakeVisible(stepShiftSlider); addAndMakeVisible(stepShiftLabel);
+    stepShiftSlider.setSliderStyle(juce::Slider::IncDecButtons);
+    stepShiftSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 50, 30);
+    stepShiftSlider.setRange(-24.0, 24.0, 1.0);
+    stepShiftSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
+    stepShiftSlider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff252525));
+    stepShiftSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff3a3a3a));
+    stepShiftLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    stepShiftLabel.attachToComponent(&stepShiftSlider, true);
+    stepShiftLabel.setJustificationType(juce::Justification::centred);
+    stepShiftSlider.onValueChange = [this, applyScope] {
+        applyScope(scopeShift, [this](int s) { audioProcessor.sequenceData[s].shift = (int)stepShiftSlider.getValue(); });
         };
 
     timeSigDenMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigDen") + 1, juce::dontSendNotification);
-    voicingMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("voicingMode") + 1, juce::dontSendNotification);
     updateTimeSigLimits();
+    updateStepSizeMenu();
     updateInspector();
+
+    // ボタンのバウンディングボックスを固定領域に設定
+    progBtnBounds = juce::Rectangle<int>((int)gridX, 80, 110, 30);
+    allClearBtnBounds = juce::Rectangle<int>((int)gridX + 120, 80, 110, 30);
+    dragMidiBtnBounds = juce::Rectangle<int>((int)gridX + 240, 80, 110, 30);
 
     startTimerHz(30);
 }
@@ -127,12 +149,35 @@ void ChordMatrixAudioProcessorEditor::updateTimeSigLimits() {
     audioProcessor.apvts.getParameter("timeSigNum")->setValueNotifyingHost((currentSelection - 1) / 14.0f);
 }
 
+void ChordMatrixAudioProcessorEditor::updateStepSizeMenu() {
+    int denIdx = timeSigDenMenu.getSelectedId();
+    int currentId = (int)*audioProcessor.apvts.getRawParameterValue("stepSize") + 1;
+
+    stepSizeMenu.clear(juce::dontSendNotification);
+    if (denIdx == 1) {
+        stepSizeMenu.addItem("1/4", 1); stepSizeMenu.addItem("1/8", 2); stepSizeMenu.addItem("1/16", 3);
+    }
+    else if (denIdx == 2) {
+        stepSizeMenu.addItem("1/8", 2); stepSizeMenu.addItem("1/16", 3);
+        if (currentId == 1) currentId = 2;
+    }
+    else if (denIdx == 3) {
+        stepSizeMenu.addItem("1/16", 3);
+        currentId = 3;
+    }
+
+    stepSizeMenu.setSelectedId(currentId, juce::dontSendNotification);
+    audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((currentId - 1) / 2.0f);
+}
+
 void ChordMatrixAudioProcessorEditor::updateInspector() {
     if (selectedStep < 0 || selectedStep >= ChordMatrix::TotalSteps) return;
     auto& sData = audioProcessor.sequenceData[selectedStep];
     stepKeyMenu.setSelectedId(sData.keyRoot + 1, juce::dontSendNotification);
     stepScaleMenu.setSelectedId(sData.scaleType + 1, juce::dontSendNotification);
     stepDegreeMenu.setSelectedId(sData.chordDegree + 1, juce::dontSendNotification);
+    voicingMenu.setSelectedId(sData.voicingMode + 1, juce::dontSendNotification);
+    stepShiftSlider.setValue(sData.shift, juce::dontSendNotification);
 }
 
 int ChordMatrixAudioProcessorEditor::getStepsPerBar() const {
@@ -167,6 +212,55 @@ int ChordMatrixAudioProcessorEditor::getEffectiveStep(int targetS) const {
     return eff;
 }
 
+void ChordMatrixAudioProcessorEditor::exportMidiAndDrag()
+{
+    juce::MidiMessageSequence seq;
+    int loopIdx = (int)*audioProcessor.apvts.getRawParameterValue("loopBars");
+    constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
+    int numBars = barsMap[loopIdx];
+    int stepsPerBar = getStepsPerBar();
+    float ppqPerStep = getPpqPerStep();
+    int totalSteps = numBars * stepsPerBar;
+
+    for (int s = 0; s < totalSteps; ++s) {
+        auto& sData = audioProcessor.sequenceData[s];
+        std::array<int, 7> vps;
+        int count = ChordMatrix::MusicTheory::getVoicedPitches(sData, vps);
+
+        if (count > 0) {
+            double startTicks = s * ppqPerStep * 960.0;
+            double endTicks = startTicks + (sData.gateLength * 960.0);
+
+            for (int i = 0; i < count; ++i) {
+                int pitch = juce::jlimit(0, 127, vps[i]);
+                int vel = juce::jlimit(1, 127, (int)sData.velocity);
+                seq.addEvent(juce::MidiMessage::noteOn(1, pitch, (juce::uint8)vel), startTicks);
+                seq.addEvent(juce::MidiMessage::noteOff(1, pitch), endTicks);
+            }
+        }
+    }
+    seq.updateMatchedPairs();
+
+    juce::MidiFile midiFile;
+    midiFile.setTicksPerQuarterNote(960);
+    midiFile.addTrack(seq);
+
+    juce::File tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    juce::File outputFile = tempDir.getChildFile("ChordMatrix_Export.mid");
+    outputFile.deleteFile();
+
+    juce::FileOutputStream outStream(outputFile);
+    if (outStream.openedOk()) {
+        midiFile.writeTo(outStream);
+        outStream.flush();
+    }
+
+    juce::StringArray files;
+    files.add(outputFile.getFullPathName());
+    // GUIからDAWへのドラッグ＆ドロップを実行
+    performExternalDragDropOfFiles(files, false);
+}
+
 void ChordMatrixAudioProcessorEditor::resized()
 {
     tempoSlider.setBounds(700, 20, 60, 25);
@@ -175,11 +269,13 @@ void ChordMatrixAudioProcessorEditor::resized()
     stepSizeMenu.setBounds(1030, 20, 70, 25);
     loopBarsMenu.setBounds(1160, 20, 60, 25);
 
-    int px = 80, py = 180, pw = 120, ph = 30, pySpace = 50;
+    // 見切れを防ぐため X座標を80pxに広げて配置
+    int px = 80, py = 190, pw = 120, ph = 30, pySpace = 45;
     stepKeyMenu.setBounds(px, py, pw, ph);
     stepScaleMenu.setBounds(px, py + pySpace, pw, ph);
     stepDegreeMenu.setBounds(px, py + pySpace * 2, pw, ph);
-    voicingMenu.setBounds(px, py + pySpace * 3 + 20, pw, ph);
+    voicingMenu.setBounds(px, py + pySpace * 3, pw, ph);
+    stepShiftSlider.setBounds(px, py + pySpace * 4, pw, ph);
 }
 
 void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
@@ -220,28 +316,30 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
     drawBtn(430, 15, 60, 35, "FOLLOW", isFollowMode, activeColor);
     drawBtn(500, 15, 80, 35, "OPTIMIZE", false, textLight);
 
-    // Progression & Drag MIDI ボタン
-    drawBtn((int)gridX, 80, 120, 30, "PROGRESSION", isProgressionMode, juce::Colours::hotpink.withAlpha(0.8f));
-    drawBtn((int)gridX + 130, 80, 120, 30, "DRAG MIDI", false, juce::Colours::cyan.withAlpha(0.6f));
+    // ヘッダーボタン (PROGRESSION, ALL CLEAR, DRAG MIDI)
+    drawBtn(progBtnBounds.getX(), progBtnBounds.getY(), progBtnBounds.getWidth(), progBtnBounds.getHeight(), "PROGRESSION", isProgressionMode, juce::Colours::hotpink.withAlpha(0.8f));
+    drawBtn(allClearBtnBounds.getX(), allClearBtnBounds.getY(), allClearBtnBounds.getWidth(), allClearBtnBounds.getHeight(), "ALL CLEAR", false, juce::Colours::indianred.withAlpha(0.8f));
+    drawBtn(dragMidiBtnBounds.getX(), dragMidiBtnBounds.getY(), dragMidiBtnBounds.getWidth(), dragMidiBtnBounds.getHeight(), "DRAG MIDI", false, juce::Colours::cyan.withAlpha(0.6f));
 
     int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
     int stepsPerBar = getStepsPerBar();
     float ppqPerStep = getPpqPerStep();
-    float stepW = seqTotalWidth / (float)stepsPerBar; // 1/4や1/8設定で縮小しないための動的横幅計算
-    int voicingMode = (int)*audioProcessor.apvts.getRawParameterValue("voicingMode");
+    float stepW = seqTotalWidth / (float)stepsPerBar;
 
+    // Inspectorエリア 
     g.setColour(juce::Colour(0xff1c1c1c));
-    g.fillRect(0, 65, 280, getHeight() - 65); // Inspector幅を広げる
+    g.fillRect(0, 65, 370, getHeight() - 65);
 
     g.setColour(juce::Colours::grey);
     g.setFont(14.0f);
     int dispBar = (selectedStep / stepsPerBar) + 1;
     int dispStep = (selectedStep % stepsPerBar) + 1;
-    g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 80, 240, 20, juce::Justification::centredLeft);
+    g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 80, 300, 20, juce::Justification::centredLeft);
 
     if (selectedStep >= 0) {
         std::array<int, 7> vps;
-        int count = ChordMatrix::MusicTheory::getVoicedPitches(audioProcessor.sequenceData[getEffectiveStep(selectedStep)], voicingMode, vps);
+        auto& sData = audioProcessor.sequenceData[getEffectiveStep(selectedStep)];
+        int count = ChordMatrix::MusicTheory::getVoicedPitches(sData, vps);
 
         juce::String noteStr = "";
         for (int i = 0; i < count; ++i) {
@@ -252,30 +350,48 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
         if (noteStr.isNotEmpty()) {
             g.setColour(activeColor);
             g.setFont(juce::Font(14.0f, juce::Font::bold));
-            g.drawFittedText("NOTES:\n" + noteStr, 10, 105, 260, 40, juce::Justification::centredLeft, 2);
+            g.drawFittedText("NOTES:\n" + noteStr, 150, 100, 200, 40, juce::Justification::centredLeft, 2);
         }
     }
 
     g.setColour(juce::Colours::grey);
     g.setFont(12.0f);
-    g.drawText(juce::String("BASE SCALE SETTINGS"), 20, 150, 180, 20, juce::Justification::centredLeft);
+    g.drawText(juce::String("BASE SCALE SETTINGS"), 20, 160, 180, 20, juce::Justification::centredLeft);
 
-    juce::String inspectorChordName = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, selectedStep, ppqPerStep, voicingMode);
+    // 各設定の右隣に配置するトグルボタン描画
+    auto drawScopeToggle = [&](int sValue, int x, int y, int w, int h) {
+        juce::String txt = (sValue == 0) ? "STEP" : (sValue == 1) ? "BAR" : "ALL";
+        juce::Colour c = (sValue == 0) ? juce::Colours::cyan : (sValue == 1) ? juce::Colours::orange : juce::Colours::hotpink;
+        g.setColour(c.withAlpha(0.3f));
+        g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
+        g.setColour(c);
+        g.drawRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f, 1.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(11.0f);
+        g.drawText(txt, x, y, w, h, juce::Justification::centred);
+        };
+
+    int toggleX = 210, toggleW = 45;
+    drawScopeToggle(scopeKey, toggleX, 190, toggleW, 30);
+    drawScopeToggle(scopeScale, toggleX, 235, toggleW, 30);
+    drawScopeToggle(scopeDegree, toggleX, 280, toggleW, 30);
+    drawScopeToggle(scopeVoicing, toggleX, 325, toggleW, 30);
+    drawScopeToggle(scopeShift, toggleX, 370, toggleW, 30);
+
+    juce::String inspectorChordName = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, selectedStep, ppqPerStep);
     g.setColour(activeColor);
-    g.setFont(juce::Font(32.0f, juce::Font::bold));
-    g.drawFittedText(inspectorChordName, 10, 420, 260, 100, juce::Justification::centred, 2);
+    g.setFont(juce::Font(36.0f, juce::Font::bold));
+    g.drawFittedText(inspectorChordName, 10, 480, 350, 100, juce::Justification::centred, 2);
 
-    // === Progression ブラウザモードの描画 ===
     if (isProgressionMode) {
         g.setColour(panelBg);
         g.fillRoundedRectangle(gridX, gridY - headerHeight - 35.0f, seqTotalWidth, 7 * cellHeight + headerHeight + 65.0f, 8.0f);
         g.setColour(juce::Colours::grey);
         g.setFont(juce::Font(24.0f, juce::Font::bold));
-        g.drawText("PROGRESSION BROWSER (Coming Soon)", gridX, gridY, seqTotalWidth, 200.0f, juce::Justification::centred);
-        return; // マトリックスやBarボタンの描画をスキップ
+        g.drawText("PROGRESSION BROWSER (Coming Soon)", (int)gridX, (int)gridY, (int)seqTotalWidth, 200, juce::Justification::centred);
+        return;
     }
 
-    // === マトリックス (SEQ) モードの描画 ===
     g.setFont(12.0f); g.setColour(juce::Colours::grey);
     g.drawText("INV", gridX - 60.0f, gridY - 30.0f, 50, 25, juce::Justification::centredRight);
 
@@ -302,8 +418,8 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
             else break;
         }
 
-        float startX = gridX + (s * stepW);
-        float runW = runLength * stepW;
+        float startX = gridX + (float)s * stepW;
+        float runW = (float)runLength * stepW;
         bool isSelected = false;
         for (int i = 0; i < runLength; ++i) {
             if (getEffectiveStep((editBar * stepsPerBar) + s + i) == getEffectiveStep(selectedStep)) isSelected = true;
@@ -314,24 +430,45 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
         g.fillRoundedRectangle(rHeader.reduced(1.0f), 4.0f);
         g.setColour(isSelected ? activeColor : textLight);
 
-        juce::String recognizedName = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, effS, ppqPerStep, voicingMode);
+        juce::String recognizedName = ChordMatrix::MusicTheory::getRecognizedChordName(audioProcessor.sequenceData, effS, ppqPerStep);
 
-        if (runLength == 1 && stepsPerBar >= 16 && recognizedName.contains("(")) {
-            recognizedName = recognizedName.fromFirstOccurrenceOf("(", false, false).upToFirstOccurrenceOf(")", false, false);
-            g.setFont(juce::Font(12.0f, juce::Font::bold));
+        if (runW <= 60.0f && recognizedName.contains("(")) {
+            juce::String absPart = recognizedName.fromFirstOccurrenceOf("(", false, false).upToFirstOccurrenceOf(")", false, false);
+            int splitIdx = -1;
+            for (int c = 0; c < absPart.length(); ++c) {
+                if (juce::CharacterFunctions::isDigit(absPart[c])) { splitIdx = c; break; }
+            }
+
+            if (splitIdx > 0) {
+                juce::String part1 = absPart.substring(0, splitIdx);
+                juce::String part2 = absPart.substring(splitIdx);
+                g.setFont(juce::Font(12.0f, juce::Font::bold));
+                g.drawText(part1, rHeader.withHeight(rHeader.getHeight() / 2.0f).reduced(2.0f), juce::Justification::centredBottom);
+                g.drawText(part2, rHeader.withY(rHeader.getY() + rHeader.getHeight() / 2.0f).withHeight(rHeader.getHeight() / 2.0f).reduced(2.0f), juce::Justification::centredTop);
+            }
+            else {
+                g.setFont(juce::Font(12.0f, juce::Font::bold));
+                g.drawFittedText(absPart, rHeader.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
+            }
         }
         else {
             g.setFont(juce::Font(14.0f, juce::Font::bold));
+            g.drawFittedText(recognizedName, rHeader.reduced(2.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
         }
-
-        g.drawFittedText(recognizedName, rHeader.reduced(2.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
 
         juce::Rectangle<float> rInv(startX, gridY - 30.0f, runW, 25.0f);
         g.setColour(juce::Colour(0xff2a2a2a));
         g.fillRoundedRectangle(rInv.reduced(1.0f), 4.0f);
-        g.setColour(juce::Colours::lightgreen);
         g.setFont(12.0f);
-        g.drawText("INV: " + juce::String(effStep.inversion), rInv, juce::Justification::centred);
+
+        if (effStep.voicingMode == 3) {
+            g.setColour(juce::Colours::grey.withAlpha(0.5f));
+            g.drawText("INV: --", rInv, juce::Justification::centred);
+        }
+        else {
+            g.setColour(juce::Colours::lightgreen);
+            g.drawText("INV: " + juce::String(effStep.inversion), rInv, juce::Justification::centred);
+        }
 
         juce::Rectangle<float> rDel(startX, gridY + (7 * cellHeight), runW, 30.0f);
         g.setColour(juce::Colour(0xff331111));
@@ -344,7 +481,7 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
 
     for (int s = 0; s <= stepsPerBar; ++s) {
         g.setColour((s % stepsPerBeat == 0) ? juce::Colour(0xff555555) : gridLine);
-        g.drawLine(gridX + (s * stepW), gridY - 5.0f, gridX + (s * stepW), gridY + (8 * cellHeight), (s % stepsPerBeat == 0) ? 2.0f : 1.0f);
+        g.drawLine(gridX + (float)s * stepW, gridY - 5.0f, gridX + (float)s * stepW, gridY + (8 * cellHeight), (s % stepsPerBeat == 0) ? 2.0f : 1.0f);
     }
 
     int loopIdx = (int)*audioProcessor.apvts.getRawParameterValue("loopBars");
@@ -359,7 +496,7 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
         if (playingBar == editBar) {
             int localStep = currentStepInLoop % stepsPerBar;
             g.setColour(juce::Colours::white.withAlpha(0.15f));
-            g.fillRect(gridX + (localStep * stepW), gridY - 5.0f, stepW, 8 * cellHeight + 10.0f);
+            g.fillRect(gridX + (float)localStep * stepW, gridY - 5.0f, stepW, 8 * cellHeight + 10.0f);
         }
     }
 
@@ -417,7 +554,6 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
         }
     }
 
-    // Barボタン (縦幅を30pxにスリム化)
     for (int i = 0; i < 16; ++i) {
         auto r = getBarButtonBounds(i);
         bool inLoop = (i < numBars);
@@ -431,7 +567,10 @@ void ChordMatrixAudioProcessorEditor::paint(juce::Graphics& g)
 
 void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 {
-    isDraggingGate = false; dragStep = -1;
+    isDraggingGate = false;
+    isDraggingChord = false;
+    isDraggingMidi = false;
+    dragStep = -1;
 
     if (juce::Rectangle<int>(220, 15, 60, 35).contains(e.getPosition())) audioProcessor.isSyncEnabled = !audioProcessor.isSyncEnabled;
     if (juce::Rectangle<int>(290, 15, 60, 35).contains(e.getPosition())) { audioProcessor.isInternalPlaying = true; audioProcessor.isSyncEnabled = false; }
@@ -449,32 +588,73 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
     if (juce::Rectangle<int>(430, 15, 60, 35).contains(e.getPosition())) { isFollowMode = !isFollowMode; repaint(); return; }
     if (juce::Rectangle<int>(500, 15, 80, 35).contains(e.getPosition())) { audioProcessor.optimizeVoicing(); repaint(); return; }
 
-    // Progression モード切り替え
-    if (juce::Rectangle<int>((int)gridX, 80, 120, 30).contains(e.getPosition())) {
+    // 5つのトグル式スコープボタンのクリック判定
+    int toggleX = 210, toggleW = 45, toggleH = 30;
+    if (juce::Rectangle<int>(toggleX, 190, toggleW, toggleH).contains(e.getPosition())) { scopeKey = (scopeKey + 1) % 3; repaint(); return; }
+    if (juce::Rectangle<int>(toggleX, 235, toggleW, toggleH).contains(e.getPosition())) { scopeScale = (scopeScale + 1) % 3; repaint(); return; }
+    if (juce::Rectangle<int>(toggleX, 280, toggleW, toggleH).contains(e.getPosition())) { scopeDegree = (scopeDegree + 1) % 3; repaint(); return; }
+    if (juce::Rectangle<int>(toggleX, 325, toggleW, toggleH).contains(e.getPosition())) { scopeVoicing = (scopeVoicing + 1) % 3; repaint(); return; }
+    if (juce::Rectangle<int>(toggleX, 370, toggleW, toggleH).contains(e.getPosition())) { scopeShift = (scopeShift + 1) % 3; repaint(); return; }
+
+    // ヘッダーボタン判定
+    if (progBtnBounds.contains(e.getPosition())) {
         isProgressionMode = !isProgressionMode;
         repaint();
         return;
     }
 
-    if (isProgressionMode) return; // Progressionモード中はSEQのクリック判定を無視
+    if (dragMidiBtnBounds.contains(e.getPosition())) {
+        isDraggingMidi = false;
+        return;
+    }
+
+    if (allClearBtnBounds.contains(e.getPosition())) {
+        juce::Component::SafePointer<ChordMatrixAudioProcessorEditor> safeThis(this);
+        juce::NativeMessageBox::showAsync(
+            juce::MessageBoxOptions()
+            .withTitle("All Clear")
+            .withMessage("Clear ALL sequences and initialize?")
+            .withButton("Yes")
+            .withButton("No"),
+            [safeThis](int result)
+            {
+                if (safeThis != nullptr && result == 0)
+                {
+                    for (int s = 0; s < ChordMatrix::TotalSteps; ++s) {
+                        safeThis->audioProcessor.sequenceData[s].inversion = 0;
+                        safeThis->audioProcessor.sequenceData[s].shift = 0;
+                        for (int v = 0; v < 7; ++v) {
+                            safeThis->audioProcessor.sequenceData[s].voices[v].isActive = false;
+                            safeThis->audioProcessor.sequenceData[s].voices[v].octaveShift = 0;
+                            safeThis->audioProcessor.sequenceData[s].voices[v].accidental = 0;
+                        }
+                    }
+                    safeThis->repaint();
+                }
+            }
+        );
+        return;
+    }
+
+    if (isProgressionMode) return;
 
     int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
     int stepsPerBar = getStepsPerBar();
     float ppqPerStep = getPpqPerStep();
     float stepW = seqTotalWidth / (float)stepsPerBar;
-    int voicingMode = (int)*audioProcessor.apvts.getRawParameterValue("voicingMode");
 
     bool isLeftClick = e.mods.isLeftButtonDown();
     bool isRightClick = e.mods.isRightButtonDown();
 
     if (e.x >= gridX) {
 
-        // Inversion クリック判定
         if (e.y >= gridY - 30.0f && e.y < gridY - 5.0f) {
             int localStep = (int)((e.x - gridX) / stepW);
             if (localStep < stepsPerBar) {
                 int clickedActS = (editBar * stepsPerBar) + localStep;
                 int effS = getEffectiveStep(clickedActS);
+
+                if (audioProcessor.sequenceData[effS].voicingMode == 3) return;
 
                 int activeNotesCount = 0;
                 for (int v = 0; v < 7; ++v) {
@@ -496,7 +676,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
 
-        // DELボタン
         if (e.y >= gridY + 7 * cellHeight && e.y < gridY + 7 * cellHeight + 30) {
             if (isLeftClick) {
                 int localStep = (int)((e.x - gridX) / stepW);
@@ -517,7 +696,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
 
-        // Header部分 (和音プレビュー)
         if (e.y >= gridY - headerHeight - 35.0f && e.y < gridY - 35.0f) {
             int localStep = (int)((e.x - gridX) / stepW);
             if (localStep < stepsPerBar) {
@@ -526,7 +704,7 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
                 selectedStep = effS;
 
                 std::array<int, 7> vps;
-                int count = ChordMatrix::MusicTheory::getVoicedPitches(audioProcessor.sequenceData[effS], voicingMode, vps);
+                int count = ChordMatrix::MusicTheory::getVoicedPitches(audioProcessor.sequenceData[effS], vps);
                 for (int i = 0; i < 7; ++i) {
                     audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
                 }
@@ -538,7 +716,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
 
-        // Grid (Note)
         if (e.y >= gridY && e.y < gridY + 7 * cellHeight) {
             for (int s = 0; s < stepsPerBar; ++s) {
                 int actS = (editBar * stepsPerBar) + s;
@@ -552,28 +729,47 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
                     }
 
                     if (cell.contains(e.position)) {
-                        if (audioProcessor.sequenceData[actS].voices[voiceIdx].isActive && e.position.x > cell.getRight() - 10.0f) {
-                            if (isLeftClick || isRightClick) {
-                                isDraggingGate = true; dragStep = actS;
-                                dragStartGate = safeGate;
-                                dragStartX = e.position.x;
+                        if (audioProcessor.sequenceData[actS].voices[voiceIdx].isActive) {
+
+                            // 右クリックですぐに消去（ドラッグを無視）
+                            if (isRightClick) {
+                                audioProcessor.sequenceData[actS].voices[voiceIdx].isActive = false;
+                                audioProcessor.sequenceData[actS].voices[voiceIdx].octaveShift = 0;
+                                audioProcessor.sequenceData[actS].voices[voiceIdx].accidental = 0;
+                                selectedStep = actS;
+                                selectedVoice = -1;
+                                updateInspector();
+                                repaint();
                                 return;
+                            }
+
+                            if (isLeftClick) {
+                                if (e.position.x > cell.getRight() - 10.0f) {
+                                    isDraggingGate = true; dragStep = actS;
+                                    dragStartGate = safeGate;
+                                    dragStartX = (float)e.position.x;
+                                    return;
+                                }
+                                else {
+                                    isDraggingChord = true; dragStep = actS;
+                                    dragStartX = (float)e.position.x;
+                                    selectedStep = actS;
+                                    return;
+                                }
                             }
                         }
                         else {
                             bool isCovered = false;
                             for (int prevS = actS - 1; prevS >= 0; --prevS) {
-                                float dist = (actS - prevS) * ppqPerStep;
+                                float dist = (float)(actS - prevS) * ppqPerStep;
                                 if (audioProcessor.sequenceData[prevS].voices[voiceIdx].isActive &&
                                     audioProcessor.sequenceData[prevS].gateLength > dist + 0.001f) {
                                     isCovered = true; break;
                                 }
                             }
 
-                            if (isLeftClick) {
-                                if (!isCovered) {
-                                    audioProcessor.sequenceData[actS].voices[voiceIdx].isActive = true;
-                                }
+                            if (isLeftClick && !isCovered) {
+                                audioProcessor.sequenceData[actS].voices[voiceIdx].isActive = true;
                                 selectedStep = actS;
                                 selectedVoice = voiceIdx;
 
@@ -587,18 +783,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
                                 repaint();
                                 return;
                             }
-                            else if (isRightClick) {
-                                if (!isCovered) {
-                                    audioProcessor.sequenceData[actS].voices[voiceIdx].isActive = false;
-                                    audioProcessor.sequenceData[actS].voices[voiceIdx].octaveShift = 0;
-                                    audioProcessor.sequenceData[actS].voices[voiceIdx].accidental = 0;
-                                    selectedStep = actS;
-                                    selectedVoice = -1;
-                                    updateInspector();
-                                    repaint();
-                                }
-                                return;
-                            }
                         }
                     }
                 }
@@ -606,8 +790,6 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
         }
     }
 
-    // Barボタン (左クリック=移動, 右クリック=非同期クリア)
-    // 修正: MessageBoxOptions で最初に生成されたボタンは index 0 を返す
     for (int i = 0; i < 16; ++i) {
         if (getBarButtonBounds(i).contains(e.position)) {
             if (isLeftClick) {
@@ -619,11 +801,11 @@ void ChordMatrixAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
                     juce::MessageBoxOptions()
                     .withTitle("Clear Bar")
                     .withMessage("Clear all steps in Bar " + juce::String(i + 1) + "?")
-                    .withButton("Yes") // Index 0
-                    .withButton("No"), // Index 1
+                    .withButton("Yes")
+                    .withButton("No"),
                     [safeThis, i, stepsPerBar](int result)
                     {
-                        if (safeThis != nullptr && result == 0) // 0 == Yes
+                        if (safeThis != nullptr && result == 0)
                         {
                             for (int s = i * stepsPerBar; s < (i + 1) * stepsPerBar; ++s) {
                                 safeThis->audioProcessor.sequenceData[s].inversion = 0;
@@ -672,29 +854,62 @@ void ChordMatrixAudioProcessorEditor::mouseMove(const juce::MouseEvent& e) {
 }
 
 void ChordMatrixAudioProcessorEditor::mouseDrag(const juce::MouseEvent& e) {
-    if (isDraggingGate && dragStep >= 0 && !isProgressionMode) {
-        int stepsPerBar = getStepsPerBar();
-        float ppqPerStep = getPpqPerStep();
-        float stepW = seqTotalWidth / (float)stepsPerBar;
-        float deltaX = e.position.x - dragStartX;
+    if (!isDraggingMidi && dragMidiBtnBounds.contains(e.getMouseDownPosition()) && e.mouseWasDraggedSinceMouseDown()) {
+        isDraggingMidi = true;
+        exportMidiAndDrag();
+        return;
+    }
 
+    if (isProgressionMode) return;
+
+    int stepsPerBar = getStepsPerBar();
+    float ppqPerStep = getPpqPerStep();
+    float stepW = seqTotalWidth / (float)stepsPerBar;
+
+    if (isDraggingGate && dragStep >= 0) {
+        float deltaX = (float)e.position.x - dragStartX;
         float maxGate = 16.0f;
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int localS = dragStep % stepsPerBar;
+
         for (int nextS = localS + 1; nextS < stepsPerBar; ++nextS) {
             int actNext = (editBar * stepsPerBar) + nextS;
             for (int v = 0; v < 7; ++v) {
                 if (audioProcessor.sequenceData[actNext].voices[v].isActive) {
-                    maxGate = (nextS - localS) * ppqPerStep;
-                    goto ExitLoop;
+                    maxGate = (float)(nextS - localS) * ppqPerStep;
+                    goto ExitLoopGate;
                 }
             }
         }
-    ExitLoop:
+    ExitLoopGate:
         float newGate = dragStartGate + (deltaX / stepW) * ppqPerStep;
         newGate = std::round(newGate / ppqPerStep) * ppqPerStep;
         audioProcessor.sequenceData[dragStep].gateLength = juce::jlimit(ppqPerStep, maxGate, newGate);
         repaint();
+    }
+    else if (isDraggingChord && dragStep >= 0) {
+        int deltaSteps = std::round(((float)e.position.x - dragStartX) / stepW);
+        if (deltaSteps != 0) {
+            int targetStep = juce::jlimit(0, ChordMatrix::TotalSteps - 1, dragStep + deltaSteps);
+
+            if (targetStep != dragStep) {
+                bool targetEmpty = true;
+                for (int v = 0; v < 7; ++v) {
+                    if (audioProcessor.sequenceData[targetStep].voices[v].isActive) targetEmpty = false;
+                }
+
+                if (targetEmpty) {
+                    audioProcessor.sequenceData[targetStep] = audioProcessor.sequenceData[dragStep];
+                    for (int v = 0; v < 7; ++v) audioProcessor.sequenceData[dragStep].voices[v].isActive = false;
+
+                    dragStep = targetStep;
+                    dragStartX += (float)deltaSteps * stepW;
+                    selectedStep = targetStep;
+                    updateInspector();
+                    repaint();
+                }
+            }
+        }
     }
 }
 
@@ -729,16 +944,15 @@ void ChordMatrixAudioProcessorEditor::mouseWheelMove(const juce::MouseEvent& e, 
     }
 }
 
-juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getCellBounds(int s, int v, float stepW) {
+juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getCellBounds(int s, int v, float stepW) const {
     return { gridX + (float)s * stepW, gridY + (float)v * cellHeight, stepW, cellHeight - 2.0f };
 }
 
-juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getStepHeaderBounds(int s, float stepW) {
+juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getStepHeaderBounds(int s, float stepW) const {
     return { gridX + (float)s * stepW, gridY - headerHeight - 35.0f, stepW, headerHeight - 5.0f };
 }
 
-// 縦幅を30pxにスリム化。横幅は1行につき8個（幅100px）
-juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getBarButtonBounds(int i) {
+juce::Rectangle<float> ChordMatrixAudioProcessorEditor::getBarButtonBounds(int i) const {
     float w = seqTotalWidth / 8.0f;
     return { gridX + (float)(i % 8) * w, 620.0f + (float)(i / 8) * 35.0f, w - 8.0f, 30.0f };
 }

@@ -65,10 +65,10 @@ namespace ChordMatrix
             int scaleIndex = (degreeIndex + voiceIndex * 2) % 7;
             int octaveOffset = (degreeIndex + voiceIndex * 2) / 7;
 
-            return baseRoot + scale[scaleIndex] + (octaveOffset * 12);
+            return baseRoot + scale[scaleIndex] + (octaveOffset * 12) + step.shift;
         }
 
-        static int getVoicedPitches(const StepData& step, int voicingMode, std::array<int, 7>& outPitches)
+        static int getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches)
         {
             int count = 0;
             for (int v = 0; v < NumVoices; ++v)
@@ -82,26 +82,40 @@ namespace ChordMatrix
 
             std::sort(outPitches.begin(), outPitches.begin() + count);
 
-            int inv = step.inversion % count;
-            for (int i = 0; i < inv; ++i) outPitches[i] += 12;
-            std::sort(outPitches.begin(), outPitches.begin() + count);
+            if (step.voicingMode == 3 && count >= 2)
+            {
+                int originalRoot = outPitches[0];
+                outPitches[0] = originalRoot - 12;
 
-            if (voicingMode == 1 && count >= 3) {
-                outPitches[count - 2] -= 12;
+                for (int i = 1; i < count; ++i)
+                {
+                    outPitches[i] += 12;
+                }
+
+                if (count < 7)
+                {
+                    outPitches[count++] = originalRoot;
+                }
             }
-            else if (voicingMode == 2 && count >= 4) {
-                outPitches[count - 3] -= 12;
-            }
-            else if (voicingMode == 3 && count >= 4) {
-                outPitches[0] -= 12;
-                outPitches[count - 1] += 12;
+            else
+            {
+                int inv = step.inversion % count;
+                for (int i = 0; i < inv; ++i) outPitches[i] += 12;
+                std::sort(outPitches.begin(), outPitches.begin() + count);
+
+                if (step.voicingMode == 1 && count >= 3) {
+                    outPitches[count - 2] -= 12;
+                }
+                else if (step.voicingMode == 2 && count >= 4) {
+                    outPitches[count - 3] -= 12;
+                }
             }
 
             std::sort(outPitches.begin(), outPitches.begin() + count);
             return count;
         }
 
-        static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int voicingMode)
+        static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep)
         {
             int effS = targetStep;
             bool anyActive = false;
@@ -167,13 +181,15 @@ namespace ChordMatrix
             if (type == "??" || type == "Custom") return type;
 
             juce::String absName = getNoteName(absRoot) + type;
-            int keyRoot = step.keyRoot % 12;
+            int keyRoot = (step.keyRoot + step.shift) % 12;
+            if (keyRoot < 0) keyRoot += 12;
+
             int diff = (absRoot - keyRoot + 12) % 12;
             const char* romanNames[] = { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" };
             juce::String relName = juce::String(romanNames[diff]) + type;
 
             std::array<int, 7> voicedPitches;
-            int activeCount = getVoicedPitches(step, voicingMode, voicedPitches);
+            int activeCount = getVoicedPitches(step, voicedPitches);
             if (activeCount > 0)
             {
                 int lowestVoicedAbs = voicedPitches[0] % 12;

@@ -23,6 +23,8 @@ namespace ChordMatrix
         int chordDegree = 0;
         int scaleType = 0;
         int inversion = 0;
+        int voicingMode = 0;
+        int shift = 0; // -24 から +24 のピッチシフト
     };
 
     static constexpr int NumVoices = 7;

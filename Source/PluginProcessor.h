@@ -41,6 +41,8 @@ public:
     bool isInternalPlaying = false;
     bool isSyncEnabled = true;
     bool isPlaying = false;
+    bool wasPlaying = false;
+
     int currentGlobalStep = -1;
     float currentBPM = 120.0f;
     double internalPPQ = 0.0;
