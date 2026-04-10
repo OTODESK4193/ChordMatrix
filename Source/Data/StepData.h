@@ -17,10 +17,10 @@ namespace ChordMatrix
         uint8_t velocity = 100;
         float gateLength = 0.25f;
 
-        // 最小Stepごとに独立したコード情報を保持
         int keyRoot = 0;
-        int chordDegree = 0; // 0〜6 (I 〜 VII)
-        int scaleType = 0;   // TypeではなくScaleを保持
+        int chordDegree = 0;
+        int scaleType = 0;
+        int inversion = 0; // 追加: 展開形 (0=基本形, 1=第1展開形...)
     };
 
     static constexpr int NumVoices = 7;

@@ -21,6 +21,7 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
         sequenceData[s].keyRoot = 0;
         sequenceData[s].chordDegree = 0;
         sequenceData[s].scaleType = 0;
+        sequenceData[s].inversion = 0;
         for (int v = 0; v < ChordMatrix::NumVoices; ++v) {
             sequenceData[s].voices[v].isActive = false;
             sequenceData[s].voices[v].octaveShift = 0;
@@ -40,6 +41,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "stepSize", 1 }, "StepSize", juce::StringArray{ "1/4", "1/8", "1/16" }, 2));
+
+    // 追加: グローバル・ボイシング・モード (Close, Drop 2, Drop 3, Spread)
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "voicingMode", 1 }, "Voicing", juce::StringArray{ "Close", "Drop 2", "Drop 3", "Spread" }, 0));
+
     return { params.begin(), params.end() };
 }
 
@@ -71,6 +76,12 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int) {
         env.setParameters(adsrParams);
         env.reset();
     }
+
+    // プレビュー専用ADSRの設定 (サスティン0の短いプラック音で安全に鳴らす)
+    juce::ADSR::Parameters prevParams{ 0.01f, 0.5f, 0.0f, 0.1f };
+    previewAdsr.setSampleRate(sampleRate);
+    previewAdsr.setParameters(prevParams);
+    previewAdsr.reset();
 }
 
 void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -100,6 +111,14 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
         isPlaying = isInternalPlaying;
         currentBPM = manualBPM;
+    }
+
+    // UIからのプレビュー要求をロックフリーで処理
+    int pPitch = previewNoteOn.exchange(-1);
+    if (pPitch >= 0) {
+        float freq = 440.0f * std::pow(2.0f, (pPitch - 69) / 12.0f);
+        previewPhaseDelta = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
+        previewAdsr.noteOn(); // NoteOff不要なエンベロープ設定のため発音だけでOK
     }
 
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
@@ -143,23 +162,32 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep) {
             const auto& sData = sequenceData[stepInLoop];
+            int voicingMode = (int)*apvts.getRawParameterValue("voicingMode");
+
+            // 動的配列を使用せず、固定長配列でVoicing計算を実行
+            std::array<int, 7> voicedPitches;
+            int activeCount = ChordMatrix::MusicTheory::getVoicedPitches(sData, voicingMode, voicedPitches);
+
+            // 発音前にすべての古い音を確実にオフ
             for (int i = 0; i < ChordMatrix::NumVoices; ++i) {
-                if (sData.voices[i].isActive) {
-                    if (currentNoteOffTimePPQ[i] > 0.0) {
-                        midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
-                        adsrs[i].noteOff();
-                    }
-                    int p = juce::jlimit(0, 127, ChordMatrix::MusicTheory::getBasePitch(sData, i) + sData.voices[i].accidental + (sData.voices[i].octaveShift * 12));
-
-                    float safeVel = juce::jlimit(0.0f, 1.0f, sData.velocity / 127.0f);
-                    midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
-                    currentNoteOnPitch[i] = p;
-                    currentNoteOffTimePPQ[i] = ppq + sData.gateLength;
-
-                    float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
-                    phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
-                    adsrs[i].noteOn();
+                if (currentNoteOffTimePPQ[i] > 0.0) {
+                    midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
+                    adsrs[i].noteOff();
+                    currentNoteOffTimePPQ[i] = -1.0;
                 }
+            }
+
+            // 新しく計算された配列から発音
+            for (int i = 0; i < activeCount; ++i) {
+                int p = juce::jlimit(0, 127, voicedPitches[i]);
+                float safeVel = juce::jlimit(0.0f, 1.0f, sData.velocity / 127.0f);
+                midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
+                currentNoteOnPitch[i] = p;
+                currentNoteOffTimePPQ[i] = ppq + sData.gateLength;
+
+                float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
+                phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
+                adsrs[i].noteOn();
             }
             currentGlobalStep = stepIdx;
         }
@@ -176,6 +204,14 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 if (phases[i] >= juce::MathConstants<float>::twoPi) phases[i] -= juce::MathConstants<float>::twoPi;
             }
         }
+
+        // プレビューボイスの加算
+        if (previewAdsr.isActive()) {
+            mix += std::sin(previewPhase) * previewAdsr.getNextSample();
+            previewPhase += previewPhaseDelta;
+            if (previewPhase >= juce::MathConstants<float>::twoPi) previewPhase -= juce::MathConstants<float>::twoPi;
+        }
+
         mix *= 0.1f;
         left[s] += mix;
         if (buffer.getNumChannels() > 1) right[s] += mix;
@@ -204,6 +240,7 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s) {
                 step.keyRoot = juce::jlimit(0, 11, step.keyRoot);
                 step.chordDegree = juce::jlimit(0, 6, step.chordDegree);
                 step.scaleType = juce::jlimit(0, 8, step.scaleType);
+                step.inversion = juce::jlimit(0, 6, step.inversion);
                 for (auto& v : step.voices) {
                     v.octaveShift = juce::jlimit((int8_t)-4, (int8_t)4, v.octaveShift);
                     v.accidental = juce::jlimit((int8_t)-2, (int8_t)2, v.accidental);

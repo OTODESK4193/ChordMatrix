@@ -26,19 +26,19 @@ private:
     juce::Label timeSigLabel{ "", "SIG:" }, stepSizeLabel{ "", "STEP:" }, barsLabel{ "", "BARS:" }, tempoLabel{ "", "BPM:" };
     juce::Label timeSigSlashLabel{ "", "/" };
 
-    int selectedStep = 0;
-    // Scaleベースに変更
-    juce::ComboBox stepKeyMenu, stepScaleMenu, stepDegreeMenu;
-    juce::Label stepKeyLabel{ "", "KEY" }, stepScaleLabel{ "", "SCALE" }, stepDegreeLabel{ "", "DEGREE" };
+    // Scaleベースのコンボボックスとボイシング設定
+    juce::ComboBox stepKeyMenu, stepScaleMenu, stepDegreeMenu, voicingMenu;
+    juce::Label stepKeyLabel{ "", "KEY" }, stepScaleLabel{ "", "SCALE" }, stepDegreeLabel{ "", "DEGREE" }, voicingLabel{ "", "VOICING" };
 
     bool isFollowMode = false;
+    int selectedStep = 0;
+    int selectedVoice = -1; // 選択された行(ピッチ・プレビュー用)
 
     // UI大改修: 1STEPを大型正方形(50px)とし、全体の座標もシフト
     const float cellHeight = 50.0f;
     const float stepW = 50.0f;
     const float gridX = 240.0f;
-    const float gridY = 160.0f;
-    // コードネームの2段組みを余裕で表示するためにヘッダーを60pxに拡大
+    const float gridY = 220.0f; // Inversionレーンの分だけ下へシフト
     const float headerHeight = 60.0f;
 
     void updateTimeSigLimits();
@@ -49,6 +49,7 @@ private:
 
     juce::Rectangle<float> getCellBounds(int step, int voiceRow);
     juce::Rectangle<float> getStepHeaderBounds(int step);
+    juce::Rectangle<float> getInversionBounds(int step);
     juce::Rectangle<float> getBarButtonBounds(int barIndex, int numBars, int stepsPerBar);
 
     bool isDraggingGate = false;
