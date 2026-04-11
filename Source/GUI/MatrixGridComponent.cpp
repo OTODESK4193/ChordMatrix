@@ -187,19 +187,24 @@ namespace ChordMatrix {
         return { leftMargin + static_cast<float>(i % 8) * w, 555.0f + static_cast<float>(i / 8) * 35.0f, w - 8.0f, 30.0f };
     }
 
+    // ------------------------------------------------------------
+    // 変更後 (MatrixGridComponent.cpp / resized メソッド)
+    // ------------------------------------------------------------
     void MatrixGridComponent::resized() {
-        if (isModulationPanelOpen) {
-            int py = 665;
-            modTargetBarMenu.setBounds(static_cast<int>(leftMargin) + 10, py, 85, 30);
-            modKeyMenu.setBounds(static_cast<int>(leftMargin) + 100, py, 65, 30);
-            modScaleMenu.setBounds(static_cast<int>(leftMargin) + 170, py, 130, 30);
-            modMethodMenu.setBounds(static_cast<int>(leftMargin) + 305, py, 160, 30);
-            btnModPreview.setBounds(static_cast<int>(leftMargin) + 475, py, 80, 30);
-            btnModApply.setBounds(static_cast<int>(leftMargin) + 560, py, 80, 30);
-            btnModCancel.setBounds(static_cast<int>(leftMargin) + 645, py, 80, 30);
+        bool showMod = isModulationPanelOpen && !isMemoryModeOpen && !isProgressionMode;
+
+        if (showMod) {
+            // ★修正: サジェストパネルと同じ領域(Y=625〜)の中央に綺麗に整列
+            int py = 675;
+            modTargetBarMenu.setBounds(static_cast<int>(leftMargin) + 20, py, 85, 30);
+            modKeyMenu.setBounds(static_cast<int>(leftMargin) + 115, py, 65, 30);
+            modScaleMenu.setBounds(static_cast<int>(leftMargin) + 190, py, 130, 30);
+            modMethodMenu.setBounds(static_cast<int>(leftMargin) + 330, py, 160, 30);
+            btnModPreview.setBounds(static_cast<int>(leftMargin) + 500, py, 70, 30);
+            btnModApply.setBounds(static_cast<int>(leftMargin) + 580, py, 70, 30);
+            btnModCancel.setBounds(static_cast<int>(leftMargin) + 660, py, 70, 30);
         }
 
-        bool showMod = isModulationPanelOpen && !isMemoryModeOpen && !isProgressionMode;
         modTargetBarMenu.setVisible(showMod);
         modKeyMenu.setVisible(showMod);
         modScaleMenu.setVisible(showMod);
@@ -210,7 +215,9 @@ namespace ChordMatrix {
 
         progressionBrowser.setBounds(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f);
 
-        // ★ サジェストパネルをBARボタンのさらに下部余白に配置
+        // ★修正: Modulation等の別パネルが開いている時は、サジェストパネルを隠して切り替える
+        bool showSuggest = !isModulationPanelOpen && !isProgressionMode && !isMemoryModeOpen;
+        suggestionPanel.setVisible(showSuggest);
         suggestionPanel.setBounds(leftMargin, 625.0f, seqTotalWidth, 150.0f);
     }
 
@@ -523,16 +530,31 @@ namespace ChordMatrix {
             }
         }
 
+        // ------------------------------------------------------------
+        // 変更後 (MatrixGridComponent.cpp / paint メソッドの最後)
+        // ------------------------------------------------------------
         if (isModulationPanelOpen) {
+            // ★修正: サジェストパネルと全く同じサイズ・位置に背景枠を描画する
+            juce::Rectangle<float> modArea(leftMargin, 625.0f, seqTotalWidth, 150.0f);
+
             g.setColour(juce::Colour(0xff222222));
-            g.fillRoundedRectangle(leftMargin, 635, seqTotalWidth, 75, 8.0f);
+            g.fillRoundedRectangle(modArea, 8.0f);
+            g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+            g.drawRoundedRectangle(modArea, 8.0f, 1.0f);
+
             g.setColour(juce::Colours::yellow);
             g.setFont(juce::Font(14.0f, juce::Font::bold));
 
             juce::String modText = "MODULATION ASSISTANT (" + modMethodMenu.getText() + ")";
             if (modText.isNotEmpty()) {
-                g.drawFittedText(modText, static_cast<int>(leftMargin) + 10, 640, 350, 20, juce::Justification::centredLeft, 1, 0.5f);
+                g.drawFittedText(modText, static_cast<int>(leftMargin) + 20, 635, 350, 20, juce::Justification::centredLeft, 1, 0.5f);
             }
+
+            // 下部に説明文を追加
+            g.setColour(juce::Colours::grey);
+            g.setFont(juce::Font(12.0f, juce::Font::plain));
+            g.drawText("Target Bar and Key/Scale will be modulated using the selected method.",
+                static_cast<int>(leftMargin) + 20, 715, 400, 20, juce::Justification::centredLeft);
         }
     }
 
