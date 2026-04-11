@@ -19,14 +19,14 @@ namespace ChordMatrix {
         auto applyScope = [this](int scopeType, auto setterFunction) {
             if (selectedStep < 0) return;
             int spb = getStepsPerBar();
-            if (scopeType == 0) { // STEP
+            if (scopeType == 0) {
                 setterFunction(selectedStep);
             }
-            else if (scopeType == 1) { // BAR
+            else if (scopeType == 1) {
                 int barStart = (selectedStep / spb) * spb;
                 for (int i = 0; i < spb; ++i) setterFunction(barStart + i);
             }
-            else { // ALL
+            else {
                 for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i);
             }
             if (onSettingsChanged) onSettingsChanged();
@@ -48,7 +48,14 @@ namespace ChordMatrix {
         stepDegreeMenu.onChange = [this, applyScope] { applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; }); };
 
         setupCombo(voicingMenu, voicingLabel);
-        voicingMenu.addItem("Close", 1); voicingMenu.addItem("Drop 2", 2); voicingMenu.addItem("Drop 3", 3); voicingMenu.addItem("Spread", 4);
+        voicingMenu.addItem("Close", 1);
+        voicingMenu.addItem("Drop 2", 2);
+        voicingMenu.addItem("Drop 3", 3);
+        voicingMenu.addItem("Spread", 4);
+        voicingMenu.addItem("Rootless A", 5);
+        voicingMenu.addItem("Rootless B", 6);
+        voicingMenu.addItem("UST (bII)", 7);
+        voicingMenu.addItem("UST (bVI)", 8);
         voicingMenu.onChange = [this, applyScope] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
 
         addAndMakeVisible(stepShiftSlider); addAndMakeVisible(stepShiftLabel);
@@ -137,7 +144,8 @@ namespace ChordMatrix {
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
 
         if (selectedStep >= 0) {
-            std::array<int, 7> vps;
+            // ★修正: 未初期化エラーを防ぐためゼロで初期化
+            std::array<int, 7> vps = { 0 };
             int count = VoicingEngine::getVoicedPitches(activeSeqData[getEffectiveStep(selectedStep)], vps);
             juce::String noteStr = "";
             for (int i = 0; i < count; ++i) {
@@ -169,9 +177,6 @@ namespace ChordMatrix {
         drawScopeToggle(scopeVoicing, toggleX, 260, toggleW, 30);
         drawScopeToggle(scopeShift, toggleX, 305, toggleW, 30);
 
-        // ==============================================================================
-        // ★修正: 縮小限界（0.2f）を付与し、フォントサイズを枠に最適化して見切れを根絶
-        // ==============================================================================
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
 
         juce::Rectangle<int> chordArea(20, 370, 340, 140);
@@ -180,16 +185,18 @@ namespace ChordMatrix {
         g.setColour(juce::Colours::black.withAlpha(0.6f));
         g.drawRoundedRectangle(chordArea.toFloat(), 8.0f, 2.0f);
 
-        juce::Rectangle<int> textArea = chordArea.reduced(10); // 余白を持たせる
+        juce::Rectangle<int> textArea = chordArea.reduced(10);
 
         if (inspectorChordName.contains("\n")) {
             juce::String relName = inspectorChordName.upToFirstOccurrenceOf("\n", false, false).trim();
             juce::String absName = inspectorChordName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
 
             g.setColour(juce::Colour(0xffffa500));
-            g.setFont(juce::Font(46.0f, juce::Font::bold)); // 縦にはみ出ない安全なサイズ
-            // 引数末尾の 0.2f が「横幅が足りない時は20%の細さまで縮めてOK」という強力な見切れ防止設定
-            g.drawFittedText(relName, textArea.removeFromTop(textArea.getHeight() * 3 / 5), juce::Justification::centredBottom, 1, 0.2f);
+            g.setFont(juce::Font(46.0f, juce::Font::bold));
+
+            // ★修正: オーバーフロー警告を防止するため、int*intの割り算ではなく安全なfloat計算に
+            int topHeight = static_cast<int>(static_cast<float>(textArea.getHeight()) * 0.6f);
+            g.drawFittedText(relName, textArea.removeFromTop(topHeight), juce::Justification::centredBottom, 1, 0.2f);
 
             g.setColour(juce::Colours::white.withAlpha(0.8f));
             g.setFont(juce::Font(24.0f, juce::Font::bold));

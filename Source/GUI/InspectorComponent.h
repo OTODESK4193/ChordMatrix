@@ -17,6 +17,9 @@ namespace ChordMatrix {
         void setSelectedStep(int stepIndex);
         int getSelectedStep() const { return selectedStep; }
 
+        // ★修正済み: public に配置されているため外部からアクセス可能
+        int getEffectiveStep(int targetS) const;
+
         std::function<void()> onSettingsChanged;
 
     private:
@@ -32,7 +35,6 @@ namespace ChordMatrix {
         void updateInspector();
         int getStepsPerBar() const;
         float getPpqPerStep() const;
-        int getEffectiveStep(int targetS) const;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InspectorComponent)
     };

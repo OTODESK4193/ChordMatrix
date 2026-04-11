@@ -18,7 +18,7 @@ namespace ChordMatrix {
         setupCombo(timeSigNumMenu, timeSigLabel);
         timeSigNumMenu.onChange = [this] {
             audioProcessor.apvts.getParameter("timeSigNum")->setValueNotifyingHost((timeSigNumMenu.getSelectedId() - 1) / 14.0f);
-            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            if (onRepaintRequest) onRepaintRequest();
             };
 
         setupCombo(timeSigDenMenu, timeSigSlashLabel);
@@ -27,20 +27,20 @@ namespace ChordMatrix {
             audioProcessor.apvts.getParameter("timeSigDen")->setValueNotifyingHost((timeSigDenMenu.getSelectedId() - 1) / 2.0f);
             updateTimeSigLimits();
             updateStepSizeMenu();
-            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            if (onRepaintRequest) onRepaintRequest();
             };
 
         setupCombo(stepSizeMenu, stepSizeLabel);
         stepSizeMenu.onChange = [this] {
             audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f);
-            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            if (onRepaintRequest) onRepaintRequest();
             };
 
         setupCombo(loopBarsMenu, barsLabel);
         loopBarsMenu.addItem("1", 1); loopBarsMenu.addItem("4", 2); loopBarsMenu.addItem("8", 3); loopBarsMenu.addItem("12", 4); loopBarsMenu.addItem("16", 5);
         loopBarsMenu.onChange = [this] {
             audioProcessor.apvts.getParameter("loopBars")->setValueNotifyingHost((loopBarsMenu.getSelectedId() - 1) / 4.0f);
-            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            if (onRepaintRequest) onRepaintRequest();
             };
 
         addAndMakeVisible(tempoSlider); addAndMakeVisible(tempoLabel);

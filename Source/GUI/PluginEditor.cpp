@@ -53,9 +53,11 @@ void ChordMatrixAudioProcessorEditor::timerCallback() {
             if (playingBar != editBar && playingBar < 16) {
                 audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(playingBar) / 15.0f);
             }
-            // ★追加：再生位置にあわせてインスペクターを更新
-            if (inspector.getSelectedStep() != currentStepInLoop) {
-                inspector.setSelectedStep(currentStepInLoop);
+
+            // ★修正: 和音が切り替わった時(EffectiveStepの変化時)だけInspectorを更新する
+            int effStep = inspector.getEffectiveStep(currentStepInLoop);
+            if (inspector.getSelectedStep() != effStep) {
+                inspector.setSelectedStep(effStep);
             }
         }
 
