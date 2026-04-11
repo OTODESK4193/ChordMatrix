@@ -43,10 +43,14 @@ namespace ChordMatrix {
         float dragStartGate = 0.0f;
         float dragStartX = 0.0f;
 
+        // private: 内に追加
         juce::Rectangle<int> progBtnBounds;
-        juce::Rectangle<int> allClearBtnBounds;
-        juce::Rectangle<int> dragMidiBtnBounds;
         juce::Rectangle<int> modulationBtnBounds;
+        juce::Rectangle<int> memoryBtnBounds;    // ★追加
+        juce::Rectangle<int> dragMidiBtnBounds;
+        juce::Rectangle<int> allClearBtnBounds;
+
+        bool isMemoryModeOpen = false;           // ★追加
 
         bool isModulationPanelOpen = false;
         juce::ComboBox modTargetBarMenu, modKeyMenu, modScaleMenu, modMethodMenu;

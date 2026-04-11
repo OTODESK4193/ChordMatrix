@@ -6,10 +6,12 @@
 namespace ChordMatrix {
 
     MatrixGridComponent::MatrixGridComponent(ChordMatrixAudioProcessor& p) : audioProcessor(p) {
+        // ★修正: ボタンの並び順と幅を調整 (Progression -> Modulation -> Memory -> DragMIDI -> AllClear)
         progBtnBounds = juce::Rectangle<int>(leftMargin, 15, 110, 30);
-        allClearBtnBounds = juce::Rectangle<int>(leftMargin + 120, 15, 110, 30);
-        dragMidiBtnBounds = juce::Rectangle<int>(leftMargin + 240, 15, 110, 30);
-        modulationBtnBounds = juce::Rectangle<int>(leftMargin + 360, 15, 110, 30);
+        modulationBtnBounds = juce::Rectangle<int>(leftMargin + 120, 15, 110, 30);
+        memoryBtnBounds = juce::Rectangle<int>(leftMargin + 240, 15, 80, 30);
+        dragMidiBtnBounds = juce::Rectangle<int>(leftMargin + 330, 15, 100, 30);
+        allClearBtnBounds = juce::Rectangle<int>(leftMargin + 440, 15, 100, 30);
 
         setupModulationPanel();
     }
@@ -151,9 +153,13 @@ namespace ChordMatrix {
             btnModApply.setBounds(static_cast<int>(leftMargin) + 560, py, 80, 30);
             btnModCancel.setBounds(static_cast<int>(leftMargin) + 645, py, 80, 30);
         }
-        modTargetBarMenu.setVisible(isModulationPanelOpen); modKeyMenu.setVisible(isModulationPanelOpen);
-        modScaleMenu.setVisible(isModulationPanelOpen); modMethodMenu.setVisible(isModulationPanelOpen);
-        btnModPreview.setVisible(isModulationPanelOpen); btnModApply.setVisible(isModulationPanelOpen); btnModCancel.setVisible(isModulationPanelOpen);
+        modTargetBarMenu.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        modKeyMenu.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        modScaleMenu.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        modMethodMenu.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        btnModPreview.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        btnModApply.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
+        btnModCancel.setVisible(isModulationPanelOpen && !isMemoryModeOpen);
     }
 
     void MatrixGridComponent::paint(juce::Graphics& g) {
@@ -172,10 +178,50 @@ namespace ChordMatrix {
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
             };
 
+        // ヘッダーボタン描画
         drawBtn(progBtnBounds.getX(), progBtnBounds.getY(), progBtnBounds.getWidth(), progBtnBounds.getHeight(), "PROGRESSION", isProgressionMode, juce::Colours::hotpink.withAlpha(0.8f));
-        drawBtn(allClearBtnBounds.getX(), allClearBtnBounds.getY(), allClearBtnBounds.getWidth(), allClearBtnBounds.getHeight(), "ALL CLEAR", false, juce::Colours::indianred.withAlpha(0.8f));
-        drawBtn(dragMidiBtnBounds.getX(), dragMidiBtnBounds.getY(), dragMidiBtnBounds.getWidth(), dragMidiBtnBounds.getHeight(), "DRAG MIDI", false, juce::Colours::cyan.withAlpha(0.6f));
         drawBtn(modulationBtnBounds.getX(), modulationBtnBounds.getY(), modulationBtnBounds.getWidth(), modulationBtnBounds.getHeight(), "MODULATION", isModulationPanelOpen, juce::Colours::yellow.withAlpha(0.8f));
+        drawBtn(memoryBtnBounds.getX(), memoryBtnBounds.getY(), memoryBtnBounds.getWidth(), memoryBtnBounds.getHeight(), "MEMORY", isMemoryModeOpen, juce::Colours::cyan.withAlpha(0.8f));
+        drawBtn(dragMidiBtnBounds.getX(), dragMidiBtnBounds.getY(), dragMidiBtnBounds.getWidth(), dragMidiBtnBounds.getHeight(), "DRAG MIDI", false, juce::Colours::cyan.withAlpha(0.6f));
+        drawBtn(allClearBtnBounds.getX(), allClearBtnBounds.getY(), allClearBtnBounds.getWidth(), allClearBtnBounds.getHeight(), "ALL CLEAR", false, juce::Colours::indianred.withAlpha(0.8f));
+
+        // ★追加: Memoryモード描画
+        if (isMemoryModeOpen) {
+            g.setColour(panelBg);
+            g.fillRoundedRectangle(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f, 8.0f);
+
+            g.setColour(textLight);
+            g.setFont(juce::Font(24.0f, juce::Font::bold));
+            g.drawText("MEMORY SLOTS", static_cast<int>(leftMargin), 130, static_cast<int>(seqTotalWidth), 30, juce::Justification::centred);
+
+            float slotW = (seqTotalWidth - 120.0f) / 4.0f;
+            float slotH = 150.0f;
+            float startX = leftMargin + 30.0f;
+            float startY = 220.0f;
+
+            for (int i = 0; i < 4; ++i) {
+                juce::Rectangle<float> r(startX + i * (slotW + 20.0f), startY, slotW, slotH);
+                bool isUsed = audioProcessor.isSlotUsed[i];
+
+                g.setColour(isUsed ? activeColor.withAlpha(0.8f) : juce::Colour(0xff3a3a3a));
+                g.fillRoundedRectangle(r, 8.0f);
+                g.setColour(isUsed ? bg : juce::Colours::grey);
+                g.setFont(juce::Font(24.0f, juce::Font::bold));
+                g.drawText("MEMORY " + juce::String(i + 1), r, juce::Justification::centred);
+
+                g.setFont(juce::Font(12.0f, juce::Font::plain));
+                juce::Rectangle<float> textR = r.translated(0, 45.0f);
+                if (isUsed) {
+                    g.drawText("L-Click: LOAD", textR.removeFromTop(15.0f), juce::Justification::centred);
+                    g.drawText("Shift+Click: OVRWRT", textR.removeFromTop(15.0f), juce::Justification::centred);
+                    g.drawText("R-Click: CLEAR", textR.removeFromTop(15.0f), juce::Justification::centred);
+                }
+                else {
+                    g.drawText("L-Click: SAVE", textR.removeFromTop(15.0f), juce::Justification::centred);
+                }
+            }
+            return; // メインシーケンサーを描画せずに終了
+        }
 
         if (isProgressionMode) {
             g.setColour(panelBg);
@@ -296,7 +342,6 @@ namespace ChordMatrix {
             float safeGate = juce::jlimit(ppqPerStep, 16.0f, effStep.gateLength);
 
             if (effStep.voicingMode >= 4) {
-                // パターンB (音名表記)
                 int maxV = (effStep.voicingMode >= 6) ? 6 : 4;
                 std::array<int, 7> tempPitches = { 0 };
                 VoicingEngine::getPatternBPitches(effStep, tempPitches);
@@ -307,7 +352,6 @@ namespace ChordMatrix {
                     cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
 
                     if (effStep.voices[i].octaveShift == -128) {
-                        // ミュート状態のセルを描画
                         g.setColour(activeColor.withAlpha(0.2f));
                         g.drawRect(cell.reduced(1.0f, 1.0f), 1.0f);
                     }
@@ -324,7 +368,6 @@ namespace ChordMatrix {
                 }
             }
             else {
-                // パターンA (度数表記 + Drop/SpreadのUI反映)
                 for (int v = 0; v < 7; ++v) {
                     int voiceIdx = 6 - v;
                     auto& voice = effStep.voices[voiceIdx];
@@ -337,7 +380,6 @@ namespace ChordMatrix {
                             g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
                         }
 
-                        // エンジン内部での最終ピッチを逆算し、表示するオクターブシフトを決定
                         int finalPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
                         int basePitch = MusicTheory::getBasePitch(effStep, voiceIdx) + voice.accidental + (voice.octaveShift * 12) + effStep.shift;
                         int engineOctaveShift = (finalPitch - basePitch) / 12;
@@ -379,8 +421,58 @@ namespace ChordMatrix {
     void MatrixGridComponent::mouseDown(const juce::MouseEvent& e) {
         isDraggingMidi = false;
 
-        if (progBtnBounds.contains(e.getPosition())) { isProgressionMode = !isProgressionMode; repaint(); return; }
-        if (modulationBtnBounds.contains(e.getPosition())) { isModulationPanelOpen = !isModulationPanelOpen; resized(); repaint(); return; }
+        // ヘッダーボタンのトグル切り替え
+        if (progBtnBounds.contains(e.getPosition())) {
+            isProgressionMode = !isProgressionMode; isModulationPanelOpen = false; isMemoryModeOpen = false;
+            repaint(); return;
+        }
+        if (modulationBtnBounds.contains(e.getPosition())) {
+            isModulationPanelOpen = !isModulationPanelOpen; isProgressionMode = false; isMemoryModeOpen = false;
+            resized(); repaint(); return;
+        }
+        if (memoryBtnBounds.contains(e.getPosition())) {
+            isMemoryModeOpen = !isMemoryModeOpen; isProgressionMode = false; isModulationPanelOpen = false;
+            resized(); repaint(); return;
+        }
+
+        // ★追加: Memoryモード時の操作（保存・呼び出し・上書き・消去）
+        if (isMemoryModeOpen) {
+            float slotW = (seqTotalWidth - 120.0f) / 4.0f;
+            float slotH = 150.0f;
+            float startX = leftMargin + 30.0f;
+            float startY = 220.0f;
+
+            for (int i = 0; i < 4; ++i) {
+                juce::Rectangle<float> r(startX + i * (slotW + 20.0f), startY, slotW, slotH);
+                if (r.contains(e.position)) {
+                    if (e.mods.isRightButtonDown()) {
+                        // 右クリック: クリア
+                        audioProcessor.isSlotUsed[i] = false;
+                    }
+                    else if (e.mods.isShiftDown() || e.mods.isCommandDown()) {
+                        // Shift+左クリック: 上書き保存
+                        audioProcessor.memorySlots[i] = audioProcessor.sequenceData;
+                        audioProcessor.isSlotUsed[i] = true;
+                    }
+                    else if (e.mods.isLeftButtonDown()) {
+                        if (audioProcessor.isSlotUsed[i]) {
+                            // 左クリック (使用済み): ロード（呼び出し）
+                            audioProcessor.sequenceData = audioProcessor.memorySlots[i];
+                            audioProcessor.previewSequenceData = audioProcessor.sequenceData;
+                            if (onRepaintRequest) onRepaintRequest();
+                        }
+                        else {
+                            // 左クリック (空): 保存
+                            audioProcessor.memorySlots[i] = audioProcessor.sequenceData;
+                            audioProcessor.isSlotUsed[i] = true;
+                        }
+                    }
+                    repaint();
+                    return;
+                }
+            }
+            return; // メモリーモード中はシーケンスクリックをブロック
+        }
 
         if (allClearBtnBounds.contains(e.getPosition())) {
             juce::Component::SafePointer<MatrixGridComponent> safeThis(this);
@@ -461,7 +553,6 @@ namespace ChordMatrix {
         float localX = static_cast<float>(e.x) - leftMargin;
         if (localX < 0) return;
 
-        // インバージョンエリア
         if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
             int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
@@ -488,7 +579,6 @@ namespace ChordMatrix {
             return;
         }
 
-        // DELエリア
         if (e.y >= 155.0f + 7.0f * cellHeight && e.y < 155.0f + 7.0f * cellHeight + 30.0f) {
             if (isLeftClick) {
                 int localStep = static_cast<int>(localX / stepW);
@@ -513,7 +603,6 @@ namespace ChordMatrix {
             return;
         }
 
-        // ヘッダーエリア
         if (e.y >= 155.0f - headerHeight - 35.0f && e.y < 155.0f - 35.0f) {
             int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
@@ -531,7 +620,6 @@ namespace ChordMatrix {
             return;
         }
 
-        // メイングリッドエリア
         if (e.y >= 155.0f && e.y < 155.0f + 7.0f * cellHeight) {
             for (int s = 0; s < stepsPerBar; ++s) {
                 int actS = (editBar * stepsPerBar) + s;
@@ -555,19 +643,17 @@ namespace ChordMatrix {
                         cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
 
                         if (cell.contains(e.position)) {
-                            // セルに対する右クリック（削除/ミュート処理）
                             if (isRightClick) {
                                 if (effStep.voicingMode >= 4) {
-                                    effStep.voices[voiceIdx].octaveShift = -128; // パターンBのミュート
+                                    effStep.voices[voiceIdx].octaveShift = -128;
                                     effStep.voices[voiceIdx].accidental = 0;
                                 }
                                 else {
-                                    effStep.voices[voiceIdx].isActive = false; // パターンAの削除
+                                    effStep.voices[voiceIdx].isActive = false;
                                     effStep.voices[voiceIdx].octaveShift = 0;
                                     effStep.voices[voiceIdx].accidental = 0;
                                 }
 
-                                // すべての音がミュート/削除されたら初期化する
                                 bool anyActive = false;
                                 if (effStep.voicingMode >= 4) {
                                     for (int i = 0; i < maxVForB; ++i) if (effStep.voices[i].octaveShift != -128) anyActive = true;
@@ -598,11 +684,9 @@ namespace ChordMatrix {
                                 else {
                                     isDraggingChord = true; dragStep = actS; dragStartX = static_cast<float>(e.position.x); selectedStep = actS;
 
-                                    // プレビューの精密な発音（DropやInversionなどを逆算）
                                     int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
                                     audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
 
-                                    // Spreadモード時のルート音のデュアルプレビュー
                                     bool isLowestActive = true;
                                     for (int iv = voiceIdx - 1; iv >= 0; --iv) {
                                         if (effStep.voices[iv].isActive) { isLowestActive = false; break; }
@@ -624,9 +708,7 @@ namespace ChordMatrix {
                         }
                     }
                     else if (cell.contains(e.position) && isLeftClick) {
-                        // アクティブでないセルの左クリック（新規ノートまたはミュート復帰）
                         if (effStep.voicingMode >= 4 && voiceIdx < maxVForB) {
-                            // パターンBのミュート復帰
                             effStep.voices[voiceIdx].octaveShift = 0;
                             selectedStep = actS;
                             int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
@@ -637,7 +719,6 @@ namespace ChordMatrix {
                             return;
                         }
                         else if (effStep.voicingMode < 4) {
-                            // パターンAの新規ノート追加
                             bool isCovered = false;
                             for (int prevS = actS - 1; prevS >= 0; --prevS) {
                                 float dist = static_cast<float>(actS - prevS) * ppqPerStep;
@@ -663,7 +744,7 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseMove(const juce::MouseEvent& e) {
-        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) {
+        if (isProgressionMode || isModulationPanelOpen || isMemoryModeOpen || audioProcessor.isPlayingModulationPreview.load()) {
             setMouseCursor(juce::MouseCursor::NormalCursor); return;
         }
 
@@ -730,7 +811,7 @@ namespace ChordMatrix {
             }
         }
 
-        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
+        if (isProgressionMode || isModulationPanelOpen || isMemoryModeOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();
@@ -783,7 +864,7 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
+        if (isProgressionMode || isModulationPanelOpen || isMemoryModeOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();

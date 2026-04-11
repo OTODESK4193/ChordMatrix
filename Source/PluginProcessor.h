@@ -1,5 +1,4 @@
 #pragma once
-
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
 #include <array>
@@ -38,9 +37,12 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
-
-    // ★追加: 転調プレビュー用の非破壊バッファと、再生フラグ
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> previewSequenceData;
+
+    // ★追加: 4つのMemoryスロットと使用状態フラグ（固定長でリアルタイムセーフ）
+    std::array<std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps>, 4> memorySlots;
+    std::array<bool, 4> isSlotUsed = { false, false, false, false };
+
     std::atomic<bool> isPlayingModulationPreview{ false };
 
     bool isInternalPlaying = false;

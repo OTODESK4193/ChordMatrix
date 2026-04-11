@@ -278,10 +278,18 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 }
 
+
 void ChordMatrixAudioProcessor::getStateInformation(juce::MemoryBlock& d)
 {
     auto state = apvts.copyState();
+
+    // 現在のシーケンスを保存
     state.setProperty("seq", juce::MemoryBlock(sequenceData.data(), sizeof(sequenceData)), nullptr);
+
+    // ★追加: Memoryスロットのデータと使用状態フラグを保存
+    state.setProperty("memSlots", juce::MemoryBlock(memorySlots.data(), sizeof(memorySlots)), nullptr);
+    state.setProperty("memUsed", juce::MemoryBlock(isSlotUsed.data(), sizeof(isSlotUsed)), nullptr);
+
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, d);
 }
@@ -297,8 +305,21 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s)
         if (tree.hasProperty("seq"))
         {
             auto mb = tree.getProperty("seq").getBinaryData();
-            size_t bytesToCopy = juce::jmin((size_t)mb->getSize(), sizeof(sequenceData));
-            memcpy(sequenceData.data(), mb->getData(), bytesToCopy);
+            memcpy(sequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(sequenceData)));
+            // プレビュー用も同期
+            memcpy(previewSequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(previewSequenceData)));
+        }
+
+        // ★追加: Memoryスロットの復元
+        if (tree.hasProperty("memSlots"))
+        {
+            auto mb = tree.getProperty("memSlots").getBinaryData();
+            memcpy(memorySlots.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(memorySlots)));
+        }
+        if (tree.hasProperty("memUsed"))
+        {
+            auto mb = tree.getProperty("memUsed").getBinaryData();
+            memcpy(isSlotUsed.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(isSlotUsed)));
         }
     }
 }
