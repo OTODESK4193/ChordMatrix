@@ -1,6 +1,7 @@
 #include "MatrixGridComponent.h"
 #include "../Engine/VoicingEngine.h"
 #include "../Engine/MidiExport.h"
+#include "../Engine/ProgressionEngine.h" // ★これを追加
 
 namespace ChordMatrix {
 
@@ -47,13 +48,14 @@ namespace ChordMatrix {
             int targetKey = modKeyMenu.getSelectedId() - 1;
             int targetScale = modScaleMenu.getSelectedId() - 1;
 
-            MusicTheory::applyModulation(audioProcessor.sequenceData, audioProcessor.previewSequenceData,
-                targetBar, targetKey, targetScale, 0, getStepsPerBar());
+            // ★修正: ProgressionEngine を呼び出し、メソッドに 1 (TwoFiveOne) を指定
+            ProgressionEngine::applyModulation(audioProcessor.sequenceData, audioProcessor.previewSequenceData,
+                targetBar, targetKey, targetScale, ProgressionEngine::TwoFiveOne, getStepsPerBar());
 
             audioProcessor.isPlayingModulationPreview.store(true);
 
             float ppq = getPpqPerStep();
-            audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1)) * static_cast<double>(getStepsPerBar()) * static_cast<double>(ppq);
+            audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1) * getStepsPerBar()) * ppq;
             audioProcessor.isInternalPlaying = true;
 
             repaint();
