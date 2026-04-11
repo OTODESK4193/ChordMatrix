@@ -104,7 +104,8 @@ namespace ChordMatrix {
             float dist = static_cast<float>(targetS - prevS) * ppq;
             bool covers = false;
             for (int v = 0; v < 7; ++v) {
-                if (audioProcessor.sequenceData[prevS].voices[v].isActive && audioProcessor.sequenceData[prevS].gateLength > dist + 0.001f) {
+                const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
+                if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) {
                     covers = true; break;
                 }
             }
@@ -133,9 +134,11 @@ namespace ChordMatrix {
         int dispStep = (selectedStep % stepsPerBar) + 1;
         g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 15, 300, 20, juce::Justification::centredLeft);
 
+        const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
+
         if (selectedStep >= 0) {
             std::array<int, 7> vps;
-            int count = VoicingEngine::getVoicedPitches(audioProcessor.sequenceData[getEffectiveStep(selectedStep)], vps);
+            int count = VoicingEngine::getVoicedPitches(activeSeqData[getEffectiveStep(selectedStep)], vps);
             juce::String noteStr = "";
             for (int i = 0; i < count; ++i) {
                 if (i > 0) noteStr << ", ";
@@ -166,9 +169,37 @@ namespace ChordMatrix {
         drawScopeToggle(scopeVoicing, toggleX, 260, toggleW, 30);
         drawScopeToggle(scopeShift, toggleX, 305, toggleW, 30);
 
-        juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(audioProcessor.sequenceData, selectedStep, ppqPerStep);
-        g.setColour(juce::Colour(0xffffa500)); g.setFont(juce::Font(36.0f, juce::Font::bold));
-        g.drawFittedText(inspectorChordName, 10, 415, 350, 100, juce::Justification::centred, 2);
+        // ==============================================================================
+        // ★修正: 左下の巨大コード表示枠。見切れを防ぐため drawFittedText を活用して枠内に収める
+        // ==============================================================================
+        juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
+
+        juce::Rectangle<int> chordArea(20, 370, 340, 140);
+        g.setColour(juce::Colour(0xff2a2a2a));
+        g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.drawRoundedRectangle(chordArea.toFloat(), 8.0f, 2.0f);
+
+        juce::Rectangle<int> textArea = chordArea.reduced(10); // 余白を持たせる
+
+        if (inspectorChordName.contains("\n")) {
+            juce::String relName = inspectorChordName.upToFirstOccurrenceOf("\n", false, false).trim();
+            juce::String absName = inspectorChordName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
+
+            g.setColour(juce::Colour(0xffffa500));
+            g.setFont(juce::Font(54.0f, juce::Font::bold));
+            // はみ出る場合は自動で文字が縮小される
+            g.drawFittedText(relName, textArea.removeFromTop(textArea.getHeight() * 2 / 3), juce::Justification::centredBottom, 1, 0.8f);
+
+            g.setColour(juce::Colours::white.withAlpha(0.8f));
+            g.setFont(juce::Font(26.0f, juce::Font::bold));
+            g.drawFittedText(absName, textArea, juce::Justification::centredTop, 1, 0.8f);
+        }
+        else {
+            g.setColour(juce::Colour(0xffffa500));
+            g.setFont(juce::Font(48.0f, juce::Font::bold));
+            g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.8f);
+        }
     }
 
     void InspectorComponent::mouseDown(const juce::MouseEvent& e) {

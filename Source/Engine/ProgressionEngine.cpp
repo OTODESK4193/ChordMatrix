@@ -4,102 +4,86 @@ namespace ChordMatrix
 {
     void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source,
         std::array<StepData, TotalSteps>& dest,
-        int targetBar, int targetKey, int targetScale, int method, int stepsPerBar)
+        int targetBar, int targetKey, int targetScale, int method,
+        int stepsPerBar, int stepsPerBeat, float ppqPerStep)
     {
-        // 1. まず元のシーケンスをすべてコピー（非破壊）
         dest = source;
-
-        // TargetBarが不正な場合は処理しない（Bar 1への転調は前小節がないためスキップ）
         if (targetBar <= 0 || targetBar >= MaxBars) return;
 
-        // 2. ターゲット小節(Bar)の頭のコードを、指定されたKeyとScaleに書き換える
-        int targetStepStart = targetBar * stepsPerBar;
-        for (int i = 0; i < stepsPerBar; ++i) {
-            dest[targetStepStart + i].keyRoot = targetKey;
-            dest[targetStepStart + i].scaleType = targetScale;
-        }
+        float chordGate = static_cast<float>(stepsPerBeat) * ppqPerStep; // ぴったり1拍分
 
-        // 3. 直前の小節(Bar - 1)の後半に、アプローチコードを挿入する
+        // ターゲット小節の頭に解決先のトニック(I)を配置
+        int targetStepStart = targetBar * stepsPerBar;
+        dest[targetStepStart].keyRoot = targetKey;
+        dest[targetStepStart].scaleType = targetScale;
+        dest[targetStepStart].chordDegree = 0;
+        for (int v = 0; v < 7; ++v) {
+            dest[targetStepStart].voices[v].isActive = (v == 0 || v == 1 || v == 2 || v == 3);
+        }
+        dest[targetStepStart].voicingMode = 0;
+        dest[targetStepStart].gateLength = chordGate * 2.0f; // 解決先は2拍分伸ばす
+
         int prevBar = targetBar - 1;
         int prevStepStart = prevBar * stepsPerBar;
-        int halfBar = stepsPerBar / 2;
-        int quarterBar = stepsPerBar / 4;
+        int beat2FromEnd = stepsPerBar - 2 * stepsPerBeat;
+        int beat1FromEnd = stepsPerBar - stepsPerBeat;
 
-        if (method == TwoFiveOne && quarterBar > 0) {
-            // ---------------------------------------------------------
-            // パターンB: ツー・ファイブ・ワン (ii - V - I)
-            // ---------------------------------------------------------
-            for (int i = halfBar; i < halfBar + quarterBar; ++i) {
-                int s = prevStepStart + i;
-                dest[s].keyRoot = targetKey;
-                dest[s].scaleType = targetScale;
-                dest[s].chordDegree = 1;         // 度数: II
-
-                for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
-                    dest[s].voices[v].octaveShift = 0;
-                    dest[s].voices[v].accidental = 0;
-                }
-                dest[s].voicingMode = 0;
-                dest[s].gateLength = 0.25f;
-            }
-
-            for (int i = halfBar + quarterBar; i < stepsPerBar; ++i) {
-                int s = prevStepStart + i;
-                dest[s].keyRoot = targetKey;
-                dest[s].scaleType = 0;
-                dest[s].chordDegree = 4; // 度数: V
-
-                for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
-                    dest[s].voices[v].octaveShift = 0;
-                    dest[s].voices[v].accidental = 0;
-                }
-                dest[s].voicingMode = 0;
-                dest[s].gateLength = 0.25f;
+        // =========================================================================
+        // ★修正の核心: 前半の既存コードが転調エリアに侵食しないように長さをカットする
+        // =========================================================================
+        float modulationStartPPQ = static_cast<float>(beat2FromEnd) * ppqPerStep;
+        for (int i = 0; i < beat2FromEnd; ++i) {
+            float currentStepPPQ = static_cast<float>(i) * ppqPerStep;
+            float maxAllowedGate = modulationStartPPQ - currentStepPPQ;
+            if (dest[prevStepStart + i].gateLength > maxAllowedGate) {
+                dest[prevStepStart + i].gateLength = maxAllowedGate; // 強制的にカット
             }
         }
-        else if (method == TritoneSub) {
-            // ---------------------------------------------------------
-            // パターンC: 裏コード (SubV7 - I)
-            // ターゲットキーの半音上（トライトーン先のV7）を生成する
-            // (targetKey + 6) % 12 をキーとするV7コードは、Targetの半音上のドミナント7thになる。
-            // ---------------------------------------------------------
-            int subVKey = (targetKey + 6) % 12;
 
-            for (int i = halfBar; i < stepsPerBar; ++i) {
-                int s = prevStepStart + i;
-                dest[s].keyRoot = subVKey;
-                dest[s].scaleType = 0;   // Major
-                dest[s].chordDegree = 4; // V
+        // 書き込むエリア（最後の2拍分）のノートを一旦クリア
+        for (int i = beat2FromEnd; i < stepsPerBar; ++i) {
+            for (int v = 0; v < 7; ++v) dest[prevStepStart + i].voices[v].isActive = false;
+        }
 
-                for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
-                    dest[s].voices[v].octaveShift = 0;
-                    dest[s].voices[v].accidental = 0;
-                }
-                dest[s].voicingMode = 0;
-                dest[s].gateLength = 0.25f;
-            }
+        int s_ii = prevStepStart + beat2FromEnd;
+        int s_V = prevStepStart + beat1FromEnd;
+
+        // アプローチコードの挿入
+        if (method == TwoFiveOne && beat2FromEnd >= 0) {
+            // ii コード (3拍目)
+            dest[s_ii].keyRoot = targetKey;
+            dest[s_ii].scaleType = targetScale;
+            dest[s_ii].chordDegree = 1;         // II
+            for (int v = 0; v < 7; ++v) dest[s_ii].voices[v].isActive = (v == 0 || v == 1 || v == 2 || v == 3);
+            dest[s_ii].voicingMode = 0;
+            dest[s_ii].gateLength = chordGate;
+
+            // V コード (4拍目)
+            dest[s_V].keyRoot = targetKey;
+            dest[s_V].scaleType = 0;
+            dest[s_V].chordDegree = 4;          // V
+            for (int v = 0; v < 7; ++v) dest[s_V].voices[v].isActive = (v == 0 || v == 1 || v == 2 || v == 3);
+            dest[s_V].voicingMode = 0;
+            dest[s_V].gateLength = chordGate;
+        }
+        else if (method == TritoneSub && beat2FromEnd >= 0) {
+            // 裏コード (3拍目〜4拍目)
+            int subVKey = (targetKey + 1) % 12; // ターゲットの半音上
+            dest[s_ii].keyRoot = subVKey;
+            dest[s_ii].scaleType = 7;   // Mixolydian -> Dom7
+            dest[s_ii].chordDegree = 0; // I
+            for (int v = 0; v < 7; ++v) dest[s_ii].voices[v].isActive = (v == 0 || v == 1 || v == 2 || v == 3);
+            dest[s_ii].voicingMode = 0;
+            dest[s_ii].gateLength = chordGate * 2.0f;
         }
         else {
-            // ---------------------------------------------------------
-            // パターンA: ダイレクト・ドミナント (V - I)
-            // ---------------------------------------------------------
-            for (int i = halfBar; i < stepsPerBar; ++i) {
-                int s = prevStepStart + i;
-                dest[s].keyRoot = targetKey;
-                dest[s].scaleType = 0;
-                dest[s].chordDegree = 4;
-
-                for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
-                    dest[s].voices[v].octaveShift = 0;
-                    dest[s].voices[v].accidental = 0;
-                }
-                dest[s].voicingMode = 0;
-                dest[s].gateLength = 0.25f;
-            }
+            // ダイレクトドミナント (3拍目〜4拍目)
+            dest[s_ii].keyRoot = targetKey;
+            dest[s_ii].scaleType = 0;
+            dest[s_ii].chordDegree = 4;
+            for (int v = 0; v < 7; ++v) dest[s_ii].voices[v].isActive = (v == 0 || v == 1 || v == 2 || v == 3);
+            dest[s_ii].voicingMode = 0;
+            dest[s_ii].gateLength = chordGate * 2.0f;
         }
     }
 }

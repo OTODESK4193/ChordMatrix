@@ -15,6 +15,7 @@ namespace ChordMatrix {
         void mouseDown(const juce::MouseEvent& e) override;
 
         void setSelectedStep(int stepIndex);
+        int getSelectedStep() const { return selectedStep; }
 
         std::function<void()> onSettingsChanged;
 

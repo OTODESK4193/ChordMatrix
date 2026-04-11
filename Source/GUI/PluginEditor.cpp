@@ -1,4 +1,4 @@
-#include "../PluginProcessor.h"
+#include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudioProcessor& p)
@@ -16,7 +16,6 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
         repaint();
         };
 
-    // Followボタンの状態を受け取る
     header.onFollowModeChanged = [this](bool follow) { isFollowMode = follow; };
 
     inspector.onSettingsChanged = [this] { matrixGrid.repaint(); };
@@ -50,10 +49,13 @@ void ChordMatrixAudioProcessorEditor::timerCallback() {
         int playingBar = currentStepInLoop / stepsPerBar;
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
 
-        // FollowモードONの時のみ、再生位置に合わせてBarを追尾させる
         if (isFollowMode) {
             if (playingBar != editBar && playingBar < 16) {
                 audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(playingBar) / 15.0f);
+            }
+            // ★追加：再生位置にあわせてインスペクターを更新
+            if (inspector.getSelectedStep() != currentStepInLoop) {
+                inspector.setSelectedStep(currentStepInLoop);
             }
         }
 

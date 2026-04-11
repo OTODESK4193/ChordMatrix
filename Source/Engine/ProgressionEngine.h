@@ -15,9 +15,10 @@ namespace ChordMatrix
             TritoneSub = 2      // SubV7 -> I (裏コード)
         };
 
-        // ターゲット小節に向けて、直前の小節に転調用のコード進行を自動生成しプレビューバッファに書き込む
+        // 拍子やステップ設定に完全対応したシグネチャに変更
         static void applyModulation(const std::array<StepData, TotalSteps>& source,
             std::array<StepData, TotalSteps>& dest,
-            int targetBar, int targetKey, int targetScale, int method, int stepsPerBar);
+            int targetBar, int targetKey, int targetScale, int method,
+            int stepsPerBar, int stepsPerBeat, float ppqPerStep);
     };
 }

@@ -53,8 +53,14 @@ namespace ChordMatrix {
             int targetScale = modScaleMenu.getSelectedId() - 1;
             int methodIdx = modMethodMenu.getSelectedId() - 1;
 
+            int tsDen = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
+            float beatLengthPpq = (tsDen == 0) ? 1.0f : (tsDen == 1) ? 0.5f : 0.25f;
+            int stepsPerBeat = juce::roundToInt(beatLengthPpq / getPpqPerStep());
+            if (stepsPerBeat < 1) stepsPerBeat = 1;
+
             ProgressionEngine::applyModulation(audioProcessor.sequenceData, audioProcessor.previewSequenceData,
-                targetBar, targetKey, targetScale, methodIdx, getStepsPerBar());
+                targetBar, targetKey, targetScale, methodIdx,
+                getStepsPerBar(), stepsPerBeat, getPpqPerStep());
 
             audioProcessor.isPlayingModulationPreview.store(true);
 
@@ -141,7 +147,7 @@ namespace ChordMatrix {
 
     void MatrixGridComponent::resized() {
         if (isModulationPanelOpen) {
-            int py = 665; // 重なりを回避するためにY座標を665に調整
+            int py = 665;
             modTargetBarMenu.setBounds(static_cast<int>(leftMargin) + 10, py, 85, 30);
             modKeyMenu.setBounds(static_cast<int>(leftMargin) + 100, py, 65, 30);
             modScaleMenu.setBounds(static_cast<int>(leftMargin) + 170, py, 130, 30);
@@ -236,31 +242,26 @@ namespace ChordMatrix {
             juce::Rectangle<float> rHeader = getStepHeaderBounds(s, stepW).withWidth(runW);
             g.setColour(isSelected ? activeColor.withAlpha(0.3f) : panelBg);
             g.fillRoundedRectangle(rHeader.reduced(1.0f), 4.0f);
-            g.setColour(isSelected ? activeColor : textLight);
 
             juce::String recognizedName = VoicingEngine::getRecognizedChordName(activeSeqData, effS, ppqPerStep);
+            juce::Rectangle<int> textRect = rHeader.reduced(2.0f).toNearestInt();
 
-            if (runW <= 60.0f && recognizedName.contains("(")) {
-                juce::String absPart = recognizedName.fromFirstOccurrenceOf("(", false, false).upToFirstOccurrenceOf(")", false, false);
-                int splitIdx = -1;
-                for (int c = 0; c < absPart.length(); ++c) {
-                    if (juce::CharacterFunctions::isDigit(absPart[c])) { splitIdx = c; break; }
-                }
-                if (splitIdx > 0) {
-                    juce::String part1 = absPart.substring(0, splitIdx);
-                    juce::String part2 = absPart.substring(splitIdx);
-                    g.setFont(juce::Font(12.0f, juce::Font::bold));
-                    g.drawText(part1, rHeader.withHeight(rHeader.getHeight() / 2.0f).reduced(2.0f), juce::Justification::centredBottom);
-                    g.drawText(part2, rHeader.withY(rHeader.getY() + rHeader.getHeight() / 2.0f).withHeight(rHeader.getHeight() / 2.0f).reduced(2.0f), juce::Justification::centredTop);
-                }
-                else {
-                    g.setFont(juce::Font(12.0f, juce::Font::bold));
-                    g.drawFittedText(absPart, rHeader.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
-                }
+            if (recognizedName.contains("\n")) {
+                juce::String relName = recognizedName.upToFirstOccurrenceOf("\n", false, false).trim();
+                juce::String absName = recognizedName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
+
+                g.setFont(juce::Font(13.0f, juce::Font::bold));
+                g.setColour(juce::Colour(0xffffa500));
+                g.drawFittedText(relName, textRect.removeFromTop(textRect.getHeight() / 2), juce::Justification::centredBottom, 1, 0.7f);
+
+                g.setFont(juce::Font(12.0f, juce::Font::plain));
+                g.setColour(juce::Colours::white);
+                g.drawFittedText(absName, textRect, juce::Justification::centredTop, 1, 0.7f);
             }
             else {
-                g.setFont(juce::Font(14.0f, juce::Font::bold));
-                g.drawFittedText(recognizedName, rHeader.reduced(2.0f).toNearestInt(), juce::Justification::centred, 2, 0.8f);
+                g.setFont(juce::Font(13.0f, juce::Font::bold));
+                g.setColour(juce::Colour(0xffffa500));
+                g.drawFittedText(recognizedName, textRect, juce::Justification::centred, 2, 0.7f);
             }
 
             juce::Rectangle<float> rInv(startX, 155.0f - 30.0f, runW, 25.0f);
@@ -333,6 +334,9 @@ namespace ChordMatrix {
                         g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
                     }
 
+                    // ==============================================================================
+                    // ★修正: ♯、♭、オクターブの描画。セルの中心に正確に描画する
+                    // ==============================================================================
                     juce::String label;
                     if (voice.octaveShift != 0) {
                         label << (voice.octaveShift > 0 ? "+" : "") << (int)voice.octaveShift;
@@ -347,7 +351,8 @@ namespace ChordMatrix {
                     if (label.isNotEmpty()) {
                         g.setColour(bg);
                         g.setFont(juce::Font(14.0f, juce::Font::bold));
-                        g.drawText(label, getCellBounds(s, v, stepW), juce::Justification::centred);
+                        // セルの幅が狭くてもはみ出さないよう drawFittedText に変更
+                        g.drawFittedText(label, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1);
                     }
                 }
             }
@@ -419,7 +424,10 @@ namespace ChordMatrix {
             return;
         }
 
-        if (isProgressionMode) return;
+        // ==============================================================================
+        // ★修正: パネルが開いている時やプレビュー中はグリッド操作を完全にブロックする
+        // ==============================================================================
+        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         isDraggingGate = false;
         isDraggingChord = false;
@@ -598,7 +606,10 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseMove(const juce::MouseEvent& e) {
-        if (isProgressionMode) { setMouseCursor(juce::MouseCursor::NormalCursor); return; }
+        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
+        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) {
+            setMouseCursor(juce::MouseCursor::NormalCursor); return;
+        }
 
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
@@ -650,7 +661,6 @@ namespace ChordMatrix {
         if (!isDraggingMidi && e.mouseWasDraggedSinceMouseDown()) {
             int stepsPerBar = getStepsPerBar();
             for (int i = 0; i < 16; ++i) {
-                // ★修正: toFloat() を使用して型不一致エラーを解消
                 if (getBarButtonBounds(i).contains(e.getMouseDownPosition().toFloat())) {
                     isDraggingMidi = true;
                     float ppqPerStep = (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 0) ? 1.0f :
@@ -661,7 +671,8 @@ namespace ChordMatrix {
             }
         }
 
-        if (isProgressionMode) return;
+        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
+        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();
@@ -711,7 +722,8 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-        if (isProgressionMode) return;
+        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
+        if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
