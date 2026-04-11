@@ -1,5 +1,5 @@
 #include "PluginProcessor.h"
-#include "GUI/PluginEditor.h" // ★修正：GUIフォルダ内のパスを指定
+#include "GUI/PluginEditor.h"
 
 ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
@@ -91,7 +91,8 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
         env.reset();
     }
 
-    juce::ADSR::Parameters prevParams{ 0.01f, 0.5f, 0.0f, 0.1f };
+    // プレビュー用（クリックしたとき用）のADSR
+    juce::ADSR::Parameters prevParams{ 0.01f, 1.5f, 0.0f, 0.1f };
     for (auto& env : previewAdsrs) {
         env.setSampleRate(sampleRate);
         env.setParameters(prevParams);
@@ -138,19 +139,15 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
     float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 
-    float stepDurationSec = (60.0f / currentBPM) * (4.0f / (float)tsDen) * (ppqPerStep / (4.0f / (float)tsDen));
-    if (tsDenIdx == 0) stepDurationSec = (60.0f / currentBPM) * ppqPerStep;
-    float dynamicDecay = juce::jlimit(0.05f, 2.0f, stepDurationSec * 0.75f);
-
     if (triggerPreview.exchange(false))
     {
-        juce::ADSR::Parameters prevParams{ 0.01f, dynamicDecay, 0.0f, 0.1f };
+        juce::ADSR::Parameters prevParams{ 0.01f, 1.5f, 0.0f, 0.1f };
         for (int i = 0; i < 7; ++i)
         {
             int p = previewNotes[i].load();
             if (p >= 0)
             {
-                float freq = 440.0f * std::pow(2.0f, (p - 69) / 12.0f);
+                float freq = 440.0f * std::pow(2.0f, (static_cast<float>(p) - 69.0f) / 12.0f);
                 previewPhaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
                 previewAdsrs[i].setParameters(prevParams);
                 previewAdsrs[i].noteOn();
@@ -189,6 +186,7 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     wasPlaying = isPlaying;
     lastPPQ = ppq;
 
+    // 毎フレーム：正確なNoteOff時間（GateLengthの終端）に到達した音をミュートする
     for (int i = 0; i < ChordMatrix::NumVoices; ++i)
     {
         if (currentNoteOffTimePPQ[i] > 0.0 && ppq >= currentNoteOffTimePPQ[i])
@@ -210,33 +208,42 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             std::array<int, 7> vps;
             int count = ChordMatrix::VoicingEngine::getVoicedPitches(sData, vps);
 
-            for (int i = 0; i < ChordMatrix::NumVoices; ++i)
+            // ★修正ポイント: このステップに「新しい和音」が存在する場合のみ処理する（空のステップは無視して音を伸ばし続ける）
+            if (count > 0)
             {
-                if (currentNoteOffTimePPQ[i] > 0.0)
+                // 新しい和音を鳴らす前に、もし前の音が残っていれば確実にミュートする（Choke処理）
+                for (int i = 0; i < ChordMatrix::NumVoices; ++i)
                 {
-                    midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
-                    adsrs[i].noteOff();
-                    currentNoteOffTimePPQ[i] = -1.0;
+                    if (currentNoteOffTimePPQ[i] > 0.0)
+                    {
+                        midiMessages.addEvent(juce::MidiMessage::noteOff(1, currentNoteOnPitch[i]), 0);
+                        adsrs[i].noteOff();
+                        currentNoteOffTimePPQ[i] = -1.0;
+                    }
+                }
+
+                // ★修正ポイント: Sustainを80%に設定し、設定した長さの間しっかり音が持続するようにする。
+                juce::ADSR::Parameters mainParams{ 0.01f, 0.1f, 0.8f, 0.05f };
+
+                for (int i = 0; i < count; ++i)
+                {
+                    int p = juce::jlimit(0, 127, vps[i]);
+                    float safeVel = juce::jlimit(0.0f, 1.0f, (float)sData.velocity / 127.0f);
+
+                    midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
+                    currentNoteOnPitch[i] = p;
+                    // ノートが終了する正確なPPQ（現在のPPQ + GateLength）をスケジューリング
+                    currentNoteOffTimePPQ[i] = ppq + (double)sData.gateLength;
+
+                    float freq = 440.0f * std::pow(2.0f, ((float)p - 69.0f) / 12.0f);
+                    phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
+
+                    adsrs[i].setParameters(mainParams);
+                    adsrs[i].noteOn();
                 }
             }
 
-            juce::ADSR::Parameters mainParams{ 0.01f, dynamicDecay, 0.6f, 0.1f };
-
-            for (int i = 0; i < count; ++i)
-            {
-                int p = juce::jlimit(0, 127, vps[i]);
-                float safeVel = juce::jlimit(0.0f, 1.0f, (float)sData.velocity / 127.0f);
-
-                midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
-                currentNoteOnPitch[i] = p;
-                currentNoteOffTimePPQ[i] = ppq + (double)sData.gateLength;
-
-                float freq = 440.0f * std::pow(2.0f, ((float)p - 69.0f) / 12.0f);
-                phaseDeltas[i] = (freq * juce::MathConstants<float>::twoPi) / currentSampleRate;
-
-                adsrs[i].setParameters(mainParams);
-                adsrs[i].noteOn();
-            }
+            // ステップの更新は和音の有無に関わらず記録する
             currentGlobalStep = stepIdx;
         }
     }

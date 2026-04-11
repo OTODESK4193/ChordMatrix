@@ -16,7 +16,6 @@ namespace ChordMatrix {
 
         void setSelectedStep(int stepIndex);
 
-        // 設定が変更された際に親（Matrix等）を再描画させるコールバック
         std::function<void()> onSettingsChanged;
 
     private:

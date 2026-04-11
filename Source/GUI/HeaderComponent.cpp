@@ -103,7 +103,8 @@ namespace ChordMatrix {
         const auto textLight = juce::Colours::white;
 
         g.fillAll(bg);
-        g.setColour(juce::Colour(0xff3a3a3a)); g.drawLine(0, (float)getHeight(), (float)getWidth(), (float)getHeight(), 2.0f);
+        g.setColour(juce::Colour(0xff3a3a3a));
+        g.drawLine(0, (float)getHeight(), (float)getWidth(), (float)getHeight(), 2.0f);
 
         g.setColour(textLight); g.setFont(juce::Font(22.0f, juce::Font::bold));
         g.drawText("CHORD MATRIX", 25, 0, 180, getHeight(), juce::Justification::centredLeft);

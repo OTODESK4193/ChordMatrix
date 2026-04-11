@@ -89,7 +89,7 @@ namespace ChordMatrix {
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
         float ppqPerStep = getPpqPerStep();
-        return juce::roundToInt((tsNum * (4.0f / tsDen)) / ppqPerStep) < 1 ? 1 : juce::roundToInt((tsNum * (4.0f / tsDen)) / ppqPerStep);
+        return juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep) < 1 ? 1 : juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep);
     }
 
     float InspectorComponent::getPpqPerStep() const {
@@ -101,7 +101,7 @@ namespace ChordMatrix {
         int eff = targetS;
         float ppq = getPpqPerStep();
         for (int prevS = targetS; prevS >= 0; --prevS) {
-            float dist = (targetS - prevS) * ppq;
+            float dist = static_cast<float>(targetS - prevS) * ppq;
             bool covers = false;
             for (int v = 0; v < 7; ++v) {
                 if (audioProcessor.sequenceData[prevS].voices[v].isActive && audioProcessor.sequenceData[prevS].gateLength > dist + 0.001f) {
@@ -114,7 +114,6 @@ namespace ChordMatrix {
     }
 
     void InspectorComponent::resized() {
-        // ローカル座標 y=0 (親のy=65相当) からの配置
         int px = 80, py = 125, pw = 120, ph = 30, pySpace = 45;
         stepKeyMenu.setBounds(px, py, pw, ph);
         stepScaleMenu.setBounds(px, py + pySpace, pw, ph);
@@ -124,7 +123,7 @@ namespace ChordMatrix {
     }
 
     void InspectorComponent::paint(juce::Graphics& g) {
-        g.fillAll(juce::Colour(0xff1c1c1c)); // Inspectorの背景
+        g.fillAll(juce::Colour(0xff1c1c1c));
 
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();

@@ -17,11 +17,13 @@ namespace ChordMatrix {
         void mouseMove(const juce::MouseEvent& e) override;
         void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
-        // 親（Editor）やInspectorに選択ステップを伝えるコールバック
         std::function<void(int)> onStepSelected;
         std::function<void()> onRepaintRequest;
 
         void setProgressionMode(bool isProg);
+
+        int getStepsPerBar() const;
+        float getPpqPerStep() const;
 
     private:
         ChordMatrixAudioProcessor& audioProcessor;
@@ -36,12 +38,15 @@ namespace ChordMatrix {
 
         bool isDraggingGate = false;
         bool isDraggingChord = false;
+        bool isDraggingMidi = false;
         int dragStep = -1;
         float dragStartGate = 0.0f;
         float dragStartX = 0.0f;
 
-        int getStepsPerBar() const;
-        float getPpqPerStep() const;
+        juce::Rectangle<int> progBtnBounds;
+        juce::Rectangle<int> allClearBtnBounds;
+        juce::Rectangle<int> dragMidiBtnBounds;
+
         int getEffectiveStep(int targetS) const;
 
         juce::Rectangle<float> getCellBounds(int step, int voiceRow, float stepW) const;

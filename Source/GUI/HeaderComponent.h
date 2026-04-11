@@ -14,7 +14,6 @@ namespace ChordMatrix {
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
 
-        // 親（Editor）へ状態変更を伝えるコールバック
         std::function<void()> onRepaintRequest;
         std::function<void(bool)> onFollowModeChanged;
 

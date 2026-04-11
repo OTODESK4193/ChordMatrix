@@ -3,19 +3,22 @@
 
 namespace ChordMatrix
 {
-    void MidiExport::exportAndDrag(const std::array<StepData, TotalSteps>& sequenceData, int numBars, int stepsPerBar, float ppqPerStep, juce::DragAndDropContainer* container)
+    void MidiExport::exportAndDrag(const std::array<StepData, TotalSteps>& sequenceData, int targetBar, int numBars, int stepsPerBar, float ppqPerStep, juce::DragAndDropContainer* container)
     {
         juce::MidiMessageSequence seq;
-        int totalSteps = numBars * stepsPerBar;
 
-        for (int s = 0; s < totalSteps; ++s) {
+        // targetBarが指定されていればそのBarのみ、-1なら全Barを出力
+        int startStep = (targetBar >= 0) ? (targetBar * stepsPerBar) : 0;
+        int endStep = (targetBar >= 0) ? (startStep + stepsPerBar) : (numBars * stepsPerBar);
+
+        for (int s = startStep; s < endStep; ++s) {
             auto& sData = sequenceData[s];
             std::array<int, 7> vps;
             int count = VoicingEngine::getVoicedPitches(sData, vps);
 
             if (count > 0) {
-                // 警告解消：先にすべて double にキャストしてから掛け算を行う
-                double startTicks = static_cast<double>(s) * static_cast<double>(ppqPerStep) * 960.0;
+                // targetBar出力時でも、MIDIクリップの頭は0秒から始まるように (s - startStep) で計算する
+                double startTicks = static_cast<double>(s - startStep) * static_cast<double>(ppqPerStep) * 960.0;
                 double endTicks = startTicks + (static_cast<double>(sData.gateLength) * 960.0);
 
                 for (int i = 0; i < count; ++i) {
