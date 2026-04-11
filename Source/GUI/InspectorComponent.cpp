@@ -231,8 +231,10 @@ namespace ChordMatrix {
 
             g.setColour(c.withAlpha(0.3f));
             g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
+
             g.setColour(c);
             g.drawRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f, 1.0f);
+
             g.setColour(juce::Colours::white);
             g.setFont(11.0f);
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
@@ -249,8 +251,8 @@ namespace ChordMatrix {
         int effStep = getEffectiveStep(selectedStep);
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
 
-        // コードネーム表示エリア
-        juce::Rectangle<int> chordArea(20, 415, 340, 140);
+        // コードネーム表示エリア (高さを120pxに調整)
+        juce::Rectangle<int> chordArea(20, 415, 340, 120);
         g.setColour(juce::Colour(0xff2a2a2a));
         g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -263,35 +265,72 @@ namespace ChordMatrix {
 
             if (part1.isNotEmpty()) {
                 g.setColour(juce::Colour(0xffffa500));
-                g.setFont(juce::Font(46.0f, juce::Font::bold));
+                g.setFont(juce::Font(42.0f, juce::Font::bold));
                 g.drawFittedText(part1, textArea.removeFromTop(static_cast<int>(textArea.getHeight() * 0.6f)), juce::Justification::centredBottom, 1, 0.2f);
             }
             if (part2.isNotEmpty()) {
                 g.setColour(juce::Colours::white.withAlpha(0.8f));
-                g.setFont(juce::Font(24.0f, juce::Font::bold));
+                g.setFont(juce::Font(22.0f, juce::Font::bold));
                 g.drawFittedText(part2, textArea, juce::Justification::centredTop, 1, 0.2f);
             }
         }
         else if (inspectorChordName.isNotEmpty()) {
             g.setColour(juce::Colour(0xffffa500));
-            g.setFont(juce::Font(42.0f, juce::Font::bold));
+            g.setFont(juce::Font(38.0f, juce::Font::bold));
             g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.2f);
         }
 
-        // ★新規追加: スケール構成音の表示エリア（余白を利用）
-        juce::Rectangle<int> scaleArea(20, 565, 340, 35);
+        // =======================================================================
+        // ★新規追加: 縦空間の余白を贅沢に使った「動的スケールマップ」
+        // Y=550からウィンドウ最下部(800)までの広大なエリアを活用
+        // =======================================================================
+        juce::Rectangle<int> scaleArea(20, 550, 340, 220);
+
         g.setColour(juce::Colour(0xff222222));
-        g.fillRoundedRectangle(scaleArea.toFloat(), 6.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.drawRoundedRectangle(scaleArea.toFloat(), 6.0f, 1.0f);
+        g.fillRoundedRectangle(scaleArea.toFloat(), 8.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.8f));
+        g.drawRoundedRectangle(scaleArea.toFloat(), 8.0f, 2.0f);
 
-        auto scaleNotes = MusicTheory::getScaleNoteNames(activeSeqData[effStep].keyRoot, activeSeqData[effStep].scaleType);
-        juce::String scaleText = "R:" + scaleNotes[0] + "  2nd:" + scaleNotes[1] + "  3rd:" + scaleNotes[2] +
-            "  4th:" + scaleNotes[3] + "  5th:" + scaleNotes[4] + "  6th:" + scaleNotes[5] + "  7th:" + scaleNotes[6];
-
-        g.setColour(juce::Colours::silver);
+        // タイトル
+        g.setColour(juce::Colours::grey);
         g.setFont(juce::Font(12.0f, juce::Font::bold));
-        g.drawFittedText(scaleText, scaleArea.reduced(5), juce::Justification::centred, 1);
+        g.drawText("SCALE STRUCTURE (" + MusicTheory::getScaleNames()[activeSeqData[effStep].scaleType] + ")",
+            scaleArea.getX(), scaleArea.getY() + 5, scaleArea.getWidth(), 20, juce::Justification::centred);
+
+        int numNotes = MusicTheory::getScaleNoteCount(activeSeqData[effStep].scaleType);
+        auto noteNames = MusicTheory::getScaleNoteNames(activeSeqData[effStep].keyRoot, activeSeqData[effStep].scaleType);
+        auto intNames = MusicTheory::getScaleIntervalNames(activeSeqData[effStep].scaleType);
+
+        // 5音/8音/12音に応じてグリッドの列数を最適化
+        int cols = (numNotes >= 10) ? 6 : (numNotes >= 7 ? 4 : numNotes);
+        int rows = (numNotes + cols - 1) / cols;
+
+        int margin = 15;
+        int padding = 8;
+        juce::Rectangle<int> gridArea = scaleArea.reduced(margin).withTrimmedTop(25);
+
+        int cellW = (gridArea.getWidth() - padding * (cols - 1)) / cols;
+        int cellH = (gridArea.getHeight() - padding * (rows - 1)) / rows;
+
+        for (int i = 0; i < numNotes; ++i) {
+            int c = i % cols;
+            int r = i / cols;
+            juce::Rectangle<int> cell(gridArea.getX() + c * (cellW + padding), gridArea.getY() + r * (cellH + padding), cellW, cellH);
+
+            // セル背景
+            g.setColour(juce::Colour(0xff2a2a2a));
+            g.fillRoundedRectangle(cell.toFloat(), 4.0f);
+
+            // インターバル名（度数）
+            g.setColour(juce::Colours::cyan.withAlpha(0.7f));
+            g.setFont(juce::Font(12.0f, juce::Font::plain));
+            g.drawText(intNames[i], cell.removeFromTop(16), juce::Justification::centredBottom);
+
+            // ノート名（大きく表示）
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(22.0f, juce::Font::bold));
+            g.drawFittedText(noteNames[i], cell, juce::Justification::centred, 1, 0.1f);
+        }
     }
 
     void InspectorComponent::mouseDown(const juce::MouseEvent& e) {

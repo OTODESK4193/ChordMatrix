@@ -27,63 +27,60 @@ namespace ChordMatrix
     }
 
     // =========================================================================
-    // ★修正: 古いstd::vector<int>の記述を削除し、ChordSuggestionを返す推論エンジンに統合
-    // =========================================================================
+        // ★置換箇所: 古いsuggestNextChordsメソッドを丸ごとこれに置き換えます
+        // =========================================================================
     std::vector<ChordSuggestion> ProgressionEngine::suggestNextChords(int currentDegree, int scaleType) {
         std::vector<ChordSuggestion> suggestions;
 
         bool isMinor = (scaleType == 1 || scaleType == 2 || scaleType == 3);
 
-        if (currentDegree == 4) {
-            // V (Dominant) -> Requires Resolution
-            suggestions.push_back({ 0, scaleType, 0, 0.70f, "Authentic Cadence (V -> I)" });
-            suggestions.push_back({ 5, scaleType, 0, 0.15f, "Deceptive Cadence (V -> vi)" });
-            if (!isMinor) suggestions.push_back({ 2, scaleType, 0, 0.05f, "Deceptive Sub (V -> iii)" });
+        if (currentDegree == 4) { // V (Dominant)
+            suggestions.push_back({ 0, scaleType, 0, 0.80f, "Authentic Cadence (V -> I)" });
+            suggestions.push_back({ 5, scaleType, 0, 0.25f, "Deceptive Cadence (V -> vi)" });
+
+            // ★資料反映: ジャズにおけるAltered, Lydian Dominant等のテンション解決
+            suggestions.push_back({ 0, 13, 0, 0.35f, "Jazz Resolution (V7alt -> I)" }); // 13: Altered
+            suggestions.push_back({ 0, 10, 0, 0.20f, "Lydian Dominant Resol." });     // 10: Lydian Dominant
+            suggestions.push_back({ 0, 29, 0, 0.15f, "Diminished (HW) Approach" });   // 29: HW Diminished
+
             suggestions.push_back({ 0, isMinor ? 0 : 1, 0, 0.10f, "Neo-Riemannian P (Parallel)" });
         }
-        else if (currentDegree == 1) {
-            // ii (Subdominant / Pre-Dominant)
-            suggestions.push_back({ 4, scaleType, 0, 0.75f, "Standard Jazz Motion (ii -> V)" });
+        else if (currentDegree == 1) { // ii
+            suggestions.push_back({ 4, scaleType, 0, 0.75f, "Standard Motion (ii -> V)" });
             suggestions.push_back({ 0, 7, 1, 0.15f, "Tritone Sub (ii -> bII7)" });
-            suggestions.push_back({ 0, scaleType, 0, 0.10f, "Plagal Variant (ii -> I)" });
         }
-        else if (currentDegree == 3) {
-            // IV (Subdominant)
-            suggestions.push_back({ 4, scaleType, 0, 0.40f, "Functional Motion (IV -> V)" });
-            suggestions.push_back({ 0, scaleType, 0, 0.30f, "Plagal Cadence (IV -> I)" });
-            if (!isMinor) suggestions.push_back({ 3, 1, 0, 0.20f, "Modal Interchange (IV -> ivm)" });
-            suggestions.push_back({ 1, scaleType, 0, 0.10f, "Subdominant Chain (IV -> ii)" });
+        else if (currentDegree == 3) { // IV
+            suggestions.push_back({ 4, scaleType, 0, 0.45f, "Functional (IV -> V)" });
+            suggestions.push_back({ 0, scaleType, 0, 0.35f, "Plagal Cadence (IV -> I)" });
+            if (!isMinor) {
+                // ★資料反映: J-POP進行におけるエモーショナルな終止演出 (IV -> III7/Harmonic Minor -> vi)
+                suggestions.push_back({ 2, 14, 0, 0.30f, "J-POP Emotional (IV -> III7)" }); // 14: Harmonic Minor
+            }
         }
-        else if (currentDegree == 0) {
-            // I (Tonic)
-            suggestions.push_back({ 3, scaleType, 0, 0.35f, "Tonic to Subdominant (I -> IV)" });
-            suggestions.push_back({ 5, scaleType, 0, 0.25f, "Tonic to Relative Minor (I -> vi)" });
-            suggestions.push_back({ 1, scaleType, 0, 0.20f, "Tonic to Supertonic (I -> ii)" });
-            suggestions.push_back({ 2, scaleType, 0, 0.10f, "Tonic to Mediant (I -> iii)" });
-            suggestions.push_back({ 0, isMinor ? 0 : 1, isMinor ? 4 : 8, 0.05f, "Neo-Riemannian L (Leading-tone)" });
-            suggestions.push_back({ 0, isMinor ? 0 : 1, isMinor ? 3 : 9, 0.05f, "Neo-Riemannian R (Relative)" });
+        else if (currentDegree == 0) { // I
+            suggestions.push_back({ 3, scaleType, 0, 0.35f, "Tonic -> Subdominant (IV)" });
+            suggestions.push_back({ 5, scaleType, 0, 0.25f, "Tonic -> Rel Minor (vi)" });
+            suggestions.push_back({ 0, isMinor ? 0 : 1, isMinor ? 4 : 8, 0.05f, "Neo-Riemannian L" });
         }
-        else if (currentDegree == 5) {
-            // vi (Submediant)
+        else if (currentDegree == 5) { // vi
             suggestions.push_back({ 1, scaleType, 0, 0.40f, "Cycle of 5ths (vi -> ii)" });
-            suggestions.push_back({ 3, scaleType, 0, 0.35f, "Subdominant Approach (vi -> IV)" });
-            suggestions.push_back({ 4, scaleType, 0, 0.25f, "Direct to Dominant (vi -> V)" });
+            suggestions.push_back({ 3, scaleType, 0, 0.30f, "Approach (vi -> IV)" });
         }
-        else if (currentDegree == 2) {
-            // iii (Mediant)
+        else if (currentDegree == 2) { // iii
             suggestions.push_back({ 5, scaleType, 0, 0.60f, "Cycle of 5ths (iii -> vi)" });
-            suggestions.push_back({ 3, scaleType, 0, 0.40f, "Stepwise Descent (iii -> IV)" });
+            // ★資料反映: 王道進行の流れで、メロディックマイナー等への転換
+            suggestions.push_back({ 5, 7, 0, 0.20f, "Modal Shift (iii -> vim(Melodic))" });
         }
 
-        // Fallback for edge cases
+        // Fallback
         if (suggestions.empty()) {
             suggestions.push_back({ 0, scaleType, 0, 0.50f, "Resolve to Tonic" });
-            suggestions.push_back({ (currentDegree + 3) % 7, scaleType, 0, 0.50f, "Cycle of 5ths fall" });
+            suggestions.push_back({ (currentDegree + 3) % 7, scaleType, 0, 0.40f, "Cycle of 5ths fall" });
         }
 
         return suggestions;
     }
-
+    // =========================================================================
     void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source,
         std::array<StepData, TotalSteps>& dest,
         int targetBar, int targetKey, int targetScale, int method,
