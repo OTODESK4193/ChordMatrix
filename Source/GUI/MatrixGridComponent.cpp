@@ -136,7 +136,7 @@ namespace ChordMatrix {
 
     void MatrixGridComponent::resized() {
         if (isModulationPanelOpen) {
-            int py = 640;
+            int py = 665; // ★修正: 640 から 665 に変更（25px下へ）
             modTargetBarMenu.setBounds(static_cast<int>(leftMargin), py, 100, 30);
             modKeyMenu.setBounds(static_cast<int>(leftMargin) + 110, py, 80, 30);
             modScaleMenu.setBounds(static_cast<int>(leftMargin) + 200, py, 150, 30);
@@ -356,19 +356,23 @@ namespace ChordMatrix {
             g.drawText("BAR " + juce::String(i + 1), r, juce::Justification::centred);
         }
 
+        // paintメソッドの最後の方
         if (isModulationPanelOpen) {
             g.setColour(juce::Colour(0xff222222));
-            g.fillRoundedRectangle(leftMargin, 605, seqTotalWidth, 75, 8.0f);
+            // ★修正: Y座標を 605 から 635 に変更
+            g.fillRoundedRectangle(leftMargin, 635, seqTotalWidth, 75, 8.0f);
+
             g.setColour(juce::Colours::yellow);
             g.setFont(juce::Font(14.0f, juce::Font::bold));
-            g.drawText("MODULATION ASSISTANT (V-I Approach)", static_cast<int>(leftMargin) + 10, 610, 300, 20, juce::Justification::centredLeft);
+            // ★修正: Y座標を 610 から 640 に変更
+            g.drawText("MODULATION ASSISTANT (V-I Approach)", static_cast<int>(leftMargin) + 10, 640, 300, 20, juce::Justification::centredLeft);
 
             if (audioProcessor.isPlayingModulationPreview.load()) {
                 g.setColour(juce::Colours::red);
-                g.drawText("PREVIEWING...", static_cast<int>(leftMargin) + 300, 610, 100, 20, juce::Justification::centredLeft);
+                // ★修正: Y座標を 610 から 640 に変更
+                g.drawText("PREVIEWING...", static_cast<int>(leftMargin) + 300, 640, 100, 20, juce::Justification::centredLeft);
             }
-        }
-    }
+        }    }
 
     void MatrixGridComponent::mouseDown(const juce::MouseEvent& e) {
         isDraggingMidi = false;
