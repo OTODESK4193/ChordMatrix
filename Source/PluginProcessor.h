@@ -1,10 +1,10 @@
-// Source/PluginProcessor.h
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
 #include "Data/StepData.h"
 #include "Engine/MusicTheory.h"
+#include "Engine/VoicingEngine.h"
 
 class ChordMatrixAudioProcessor : public juce::AudioProcessor
 {

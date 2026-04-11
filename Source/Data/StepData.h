@@ -1,4 +1,3 @@
-// Source/Data/StepData.h
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -24,7 +23,7 @@ namespace ChordMatrix
         int scaleType = 0;
         int inversion = 0;
         int voicingMode = 0;
-        int shift = 0; // -24 から +24 のピッチシフト
+        int shift = 0;
     };
 
     static constexpr int NumVoices = 7;

@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-
 project(ChordMatrix VERSION 1.0.0)
 
 # =========================================================================
@@ -8,7 +7,6 @@ project(ChordMatrix VERSION 1.0.0)
 set(JUCE_VST3_AUTO_MANIFEST OFF)
 add_compile_definitions(JUCE_VST3_CAN_REPLACE_VST2=0)
 add_compile_definitions(JUCE_USE_WINDOWS_MEDIA_FORMAT=1)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -44,19 +42,39 @@ target_compile_options(ChordMatrix PRIVATE
 )
 
 # =========================================================================
-# 4. ソースコードの指定
+# 4. ソースコードの指定 (★修正：PluginEditorのパスをGUIフォルダ内に変更)
 # =========================================================================
 target_sources(ChordMatrix PRIVATE
+    # Processor (Backend)
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
-    Source/PluginEditor.cpp
-    Source/PluginEditor.h
- "Source/Engine/MusicTheory.h")
+    
+    # Data
+    Source/Data/StepData.h
+    
+    # Engine
+    Source/Engine/MusicTheory.cpp
+    Source/Engine/MusicTheory.h
+    Source/Engine/VoicingEngine.cpp
+    Source/Engine/VoicingEngine.h
+    Source/Engine/MidiExport.cpp
+    Source/Engine/MidiExport.h
+    
+    # GUI
+    Source/GUI/PluginEditor.cpp      # ← 修正箇所
+    Source/GUI/PluginEditor.h        # ← 修正箇所
+    Source/GUI/HeaderComponent.cpp
+    Source/GUI/HeaderComponent.h
+    Source/GUI/InspectorComponent.cpp
+    Source/GUI/InspectorComponent.h
+    Source/GUI/MatrixGridComponent.cpp
+    Source/GUI/MatrixGridComponent.h
+)
 
 # =========================================================================
-# 5. インクルードパスの設定（★ここが最重要修正ポイント）
+# 5. インクルードパスの設定
 # =========================================================================
-# これにより #include "Data/StepData.h" が正しく見つかるようになります
+# これにより #include "Data/StepData.h" などが正しく見つかるようになります
 target_include_directories(ChordMatrix PRIVATE Source)
 
 # =========================================================================
