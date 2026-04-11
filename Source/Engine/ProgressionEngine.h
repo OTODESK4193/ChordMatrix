@@ -6,13 +6,12 @@
 
 namespace ChordMatrix
 {
-    // 音楽理論上のプリセット構造体
     struct PresetChord {
-        int startBeat;       // 0-based
-        int lengthBeats;     // 持続拍数
-        int chordDegree;     // 0=I, 1=II...
-        int voicingMode;     // 推奨ボイシング (0:Close, 4:RootlessA, 8:Quartal等)
-        int accRoot = 0;     // 臨時記号（-128でミュート）
+        int startBeat;
+        int lengthBeats;
+        int chordDegree;
+        int voicingMode;
+        int accRoot = 0;
         int acc3rd = 0;
         int acc5th = 0;
         int acc7th = 0;
@@ -29,21 +28,35 @@ namespace ChordMatrix
     class ProgressionEngine
     {
     public:
+        // 転調・アプローチアルゴリズム（15種類に拡張）
         enum ModulationMethod {
-            DirectDominant = 0, // V7 -> I
-            TwoFiveOne = 1,     // IIm7 -> V7 -> I
-            TritoneSub = 2,     // bII7 -> I (裏コード)
-            MinorTwoFive = 3,   // IIm7b5 -> V7alt -> I (マイナー・ツーファイブ)
-            Backdoor = 4        // IVm7 -> bVII7 -> I (サブドミナントマイナー終止)
+            DirectDominant = 0,
+            TwoFiveOne = 1,
+            TritoneSub = 2,
+            MinorTwoFive = 3,
+            Backdoor = 4,
+            PassingDiminished = 5,
+            SecondaryDominant = 6,
+            DoubleTwoFive = 7,
+            ColtraneApproach = 8,
+            ExtendedDominant = 9,      // V7/V/V -> V7/V -> V7
+            ChromaticApproachUp = 10,  // 半音下からのアプローチ
+            ChromaticApproachDown = 11,// 半音上からのアプローチ
+            DeceptiveCadence = 12,     // 偽終止アプローチ
+            ConstantStructure = 13,    // 同形進行（平行移動）
+            PedalPointApproach = 14    // ベース保留アプローチ
         };
 
-        // 転調・アプローチコードの自動生成
         static void applyModulation(const std::array<StepData, TotalSteps>& source,
             std::array<StepData, TotalSteps>& dest,
             int targetBar, int targetKey, int targetScale, int method,
             int stepsPerBar, int stepsPerBeat, float ppqPerStep);
 
-        // 高度な音楽理論に基づく全コード進行辞書の取得
+        // ジャズ、ポップス、クラシックの100種類以上の進行を網羅した辞書
         static const std::vector<ProgressionPreset>& getProgressionDictionary();
+        static juce::StringArray getModulationNames();
+
+        // AIサジェスション機能への布石（機能和声的推論）
+        static std::vector<int> suggestNextChords(int currentDegree, int scaleType);
     };
 }
