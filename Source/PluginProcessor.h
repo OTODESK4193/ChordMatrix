@@ -33,13 +33,10 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    void optimizeVoicing();
-
     juce::AudioProcessorValueTreeState apvts;
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> previewSequenceData;
 
-    // ★追加: 4つのMemoryスロットと使用状態フラグ（固定長でリアルタイムセーフ）
     std::array<std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps>, 4> memorySlots;
     std::array<bool, 4> isSlotUsed = { false, false, false, false };
 

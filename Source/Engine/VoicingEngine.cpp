@@ -193,9 +193,6 @@ namespace ChordMatrix
             }
         }
 
-        // =========================================================
-        // パターンA (動的ルート探索による高精度コード推論)
-        // =========================================================
         std::array<int, 7> voicedPitches = { 0 };
         int activeCount = getVoicedPitches(step, voicedPitches);
         if (activeCount == 0) return "-";
@@ -211,9 +208,8 @@ namespace ChordMatrix
         juce::String bestType = "??";
         int bestScore = -1;
 
-        // 鳴っている音を順番にルートと仮定して、最も成立するコードを探す
         for (int testRoot = 0; testRoot < 12; ++testRoot) {
-            if (!has[testRoot]) continue; // 鳴っていない音はルート候補から除外
+            if (!has[testRoot]) continue;
 
             bool rHas[12] = { false };
             for (int i = 0; i < 12; ++i) if (has[i]) rHas[(i - testRoot + 12) % 12] = true;
@@ -247,7 +243,6 @@ namespace ChordMatrix
                 if (rHas[5] && type != "sus4") type += "(11)";
                 if (rHas[9]) type += "(13)";
 
-                // 評価点の加算（インスペクターの指定ルートや、最低音を優先）
                 if (testRoot == theoreticalRoot) score += 5;
                 if (testRoot == (lowestRaw % 12)) score += 2;
 
@@ -259,7 +254,6 @@ namespace ChordMatrix
             }
         }
 
-        // どのコードにも当てはまらなかった場合のフォールバック
         if (bestType == "??") {
             bestRoot = lowestRaw % 12;
             bestType = (activeCount == 1) ? "" : "Custom";
@@ -273,7 +267,6 @@ namespace ChordMatrix
         const char* romanNames[] = { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" };
         juce::String relName = juce::String(romanNames[diff]) + bestType;
 
-        // 転回形（スラッシュコード）の表記
         int lowestVoicedAbs = lowestRaw % 12;
         if (lowestVoicedAbs != bestRoot && bestType != "Custom" && bestType != "") {
             juce::String slash = "on" + MusicTheory::getNoteName(lowestVoicedAbs);
@@ -287,40 +280,48 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
-    void VoicingEngine::optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps) {
-        int prevActiveStep = -1;
-        for (int s = 0; s < totalSteps; ++s) {
-            if (seq[s].voicingMode >= 4) continue;
+    // ★修正: 単一ステップ用の最適化関数
+    void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep) {
+        if (seq[targetStep].voicingMode >= 4) return; // パターンBは自動計算のため除外
 
+        int prevActiveStep = -1;
+        // 指定ステップより前の直近のアクティブコードを探す
+        for (int s = targetStep - 1; s >= 0; --s) {
             bool hasActive = false;
             for (int v = 0; v < NumVoices; ++v) {
-                if (seq[s].voices[v].isActive) {
-                    hasActive = true;
-                    if (prevActiveStep >= 0) {
-                        int bestDist = 9999;
-                        int targetPitch = 60;
-                        for (int pv = 0; pv < NumVoices; ++pv) {
-                            if (seq[prevActiveStep].voices[pv].isActive) {
-                                int pPitch = MusicTheory::getBasePitch(seq[prevActiveStep], pv) + seq[prevActiveStep].voices[pv].accidental + (seq[prevActiveStep].voices[pv].octaveShift * 12);
-                                int currentBase = MusicTheory::getBasePitch(seq[s], v);
-                                int dist = std::abs(pPitch - currentBase);
-                                if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
-                            }
-                        }
+                if (seq[s].voices[v].isActive) { hasActive = true; break; }
+            }
+            if (hasActive) { prevActiveStep = s; break; }
+        }
 
-                        int basePitch = MusicTheory::getBasePitch(seq[s], v) + seq[s].voices[v].accidental;
-                        int bestOct = seq[s].voices[v].octaveShift;
-                        int minD = 9999;
+        if (prevActiveStep < 0) return;
 
-                        for (int oct = -2; oct <= 2; ++oct) {
-                            int d = std::abs((basePitch + oct * 12) - targetPitch);
-                            if (d < minD) { minD = d; bestOct = oct; }
-                        }
-                        seq[s].voices[v].octaveShift = static_cast<int8_t>(bestOct);
+        for (int v = 0; v < NumVoices; ++v) {
+            if (seq[targetStep].voices[v].isActive) {
+                int bestDist = 9999;
+                int targetPitch = 60;
+
+                // 直前のコードの構成音から、最も近いターゲットピッチを探す
+                for (int pv = 0; pv < NumVoices; ++pv) {
+                    if (seq[prevActiveStep].voices[pv].isActive) {
+                        int pPitch = MusicTheory::getBasePitch(seq[prevActiveStep], pv) + seq[prevActiveStep].voices[pv].accidental + (seq[prevActiveStep].voices[pv].octaveShift * 12);
+                        int currentBase = MusicTheory::getBasePitch(seq[targetStep], v);
+                        int dist = std::abs(pPitch - currentBase);
+                        if (dist < bestDist) { bestDist = dist; targetPitch = pPitch; }
                     }
                 }
+
+                // ターゲットピッチに一番近くなるオクターブシフトを決定
+                int basePitch = MusicTheory::getBasePitch(seq[targetStep], v) + seq[targetStep].voices[v].accidental;
+                int bestOct = seq[targetStep].voices[v].octaveShift;
+                int minD = 9999;
+
+                for (int oct = -2; oct <= 2; ++oct) {
+                    int d = std::abs((basePitch + oct * 12) - targetPitch);
+                    if (d < minD) { minD = d; bestOct = oct; }
+                }
+                seq[targetStep].voices[v].octaveShift = static_cast<int8_t>(bestOct);
             }
-            if (hasActive) prevActiveStep = s;
         }
     }
 }

@@ -139,7 +139,6 @@ namespace ChordMatrix {
         drawBtn(290, 15, 60, 35, "PLAY", audioProcessor.isInternalPlaying, activeColor);
         drawBtn(360, 15, 60, 35, "STOP", !audioProcessor.isInternalPlaying && !audioProcessor.isSyncEnabled, juce::Colours::red.withAlpha(0.8f));
         drawBtn(430, 15, 60, 35, "FOLLOW", isFollowMode, activeColor);
-        drawBtn(500, 15, 80, 35, "OPTIMIZE", false, textLight);
     }
 
     void HeaderComponent::mouseDown(const juce::MouseEvent& e) {
@@ -159,7 +158,6 @@ namespace ChordMatrix {
             isFollowMode = !isFollowMode;
             if (onFollowModeChanged) onFollowModeChanged(isFollowMode);
         }
-        if (juce::Rectangle<int>(500, 15, 80, 35).contains(e.getPosition())) { audioProcessor.optimizeVoicing(); }
 
         if (onRepaintRequest) onRepaintRequest();
         repaint();

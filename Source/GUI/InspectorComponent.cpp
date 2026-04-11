@@ -16,7 +16,6 @@ namespace ChordMatrix {
             lbl.setJustificationType(juce::Justification::centred);
             };
 
-        // ★修正: メンバ関数化されたapplyScopeを利用して安全にバインディング
         setupCombo(stepKeyMenu, stepKeyLabel);
         for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(MusicTheory::getNoteName(i), i + 1);
         stepKeyMenu.onChange = [this] { applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; }); };
@@ -42,6 +41,16 @@ namespace ChordMatrix {
         voicingMenu.addItem("UST (bVI)", 8);
         voicingMenu.onChange = [this] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
 
+        // ★追加: 移設されたOptimizeボタンの設定
+        addAndMakeVisible(btnOptimize);
+        btnOptimize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
+        btnOptimize.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffa500));
+        btnOptimize.onClick = [this] {
+            applyScope(scopeOptimize, [this](int s) {
+                VoicingEngine::optimizeStep(audioProcessor.sequenceData, s, getPpqPerStep());
+                });
+            };
+
         addAndMakeVisible(stepShiftSlider); addAndMakeVisible(stepShiftLabel);
         stepShiftSlider.setSliderStyle(juce::Slider::IncDecButtons);
         stepShiftSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 50, 30);
@@ -59,7 +68,6 @@ namespace ChordMatrix {
 
     InspectorComponent::~InspectorComponent() {}
 
-    // ★修正: ローカルなラムダ式を廃止し、安全なメンバ関数として再定義
     void InspectorComponent::applyScope(int scopeType, std::function<void(int)> setterFunction) {
         if (selectedStep < 0) return;
         int spb = getStepsPerBar();
@@ -75,7 +83,6 @@ namespace ChordMatrix {
             for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i);
         }
 
-        // プレビューデータ（再生バッファ）にも即座に同期させ、音とUIの齟齬を防ぐ
         for (int i = 0; i < ChordMatrix::TotalSteps; ++i) {
             audioProcessor.previewSequenceData[i] = audioProcessor.sequenceData[i];
         }
@@ -113,7 +120,6 @@ namespace ChordMatrix {
         return (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
     }
 
-    // ★修正: 最新の MatrixGridComponent と完全に同期した判定ロジック
     int InspectorComponent::getEffectiveStep(int targetS) const {
         int eff = targetS;
         float ppq = getPpqPerStep();
@@ -122,15 +128,12 @@ namespace ChordMatrix {
             bool covers = false;
             const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
 
-            // パターンB（Rootless/USTなど）の判定もインスペクター側で正しく認識させる
             if (sData.voicingMode >= 4 && sData.gateLength > dist + 0.001f) {
                 covers = true;
             }
             else {
                 for (int v = 0; v < 7; ++v) {
-                    if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) {
-                        covers = true; break;
-                    }
+                    if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) { covers = true; break; }
                 }
             }
             if (covers) { eff = prevS; break; }
@@ -144,7 +147,10 @@ namespace ChordMatrix {
         stepScaleMenu.setBounds(px, py + pySpace, pw, ph);
         stepDegreeMenu.setBounds(px, py + pySpace * 2, pw, ph);
         voicingMenu.setBounds(px, py + pySpace * 3, pw, ph);
-        stepShiftSlider.setBounds(px, py + pySpace * 4, pw, ph);
+
+        // ★修正: UI要素のY座標をスライドさせてボタンを挿入
+        btnOptimize.setBounds(px, py + pySpace * 4, pw, ph);
+        stepShiftSlider.setBounds(px, py + pySpace * 5, pw, ph);
     }
 
     void InspectorComponent::paint(juce::Graphics& g) {
@@ -192,11 +198,13 @@ namespace ChordMatrix {
         drawScopeToggle(scopeScale, toggleX, 170, toggleW, 30);
         drawScopeToggle(scopeDegree, toggleX, 215, toggleW, 30);
         drawScopeToggle(scopeVoicing, toggleX, 260, toggleW, 30);
-        drawScopeToggle(scopeShift, toggleX, 305, toggleW, 30);
+        drawScopeToggle(scopeOptimize, toggleX, 305, toggleW, 30); // ★追加
+        drawScopeToggle(scopeShift, toggleX, 350, toggleW, 30);    // ★修正: 下へ移動
 
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
 
-        juce::Rectangle<int> chordArea(20, 370, 340, 140);
+        // ★修正: コード表示エリア全体を下にずらす
+        juce::Rectangle<int> chordArea(20, 415, 340, 140);
         g.setColour(juce::Colour(0xff2a2a2a));
         g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -231,7 +239,8 @@ namespace ChordMatrix {
         if (juce::Rectangle<int>(toggleX, 170, toggleW, toggleH).contains(e.getPosition())) { scopeScale = (scopeScale + 1) % 3; repaint(); }
         if (juce::Rectangle<int>(toggleX, 215, toggleW, toggleH).contains(e.getPosition())) { scopeDegree = (scopeDegree + 1) % 3; repaint(); }
         if (juce::Rectangle<int>(toggleX, 260, toggleW, toggleH).contains(e.getPosition())) { scopeVoicing = (scopeVoicing + 1) % 3; repaint(); }
-        if (juce::Rectangle<int>(toggleX, 305, toggleW, toggleH).contains(e.getPosition())) { scopeShift = (scopeShift + 1) % 3; repaint(); }
+        if (juce::Rectangle<int>(toggleX, 305, toggleW, toggleH).contains(e.getPosition())) { scopeOptimize = (scopeOptimize + 1) % 3; repaint(); } // ★追加
+        if (juce::Rectangle<int>(toggleX, 350, toggleW, toggleH).contains(e.getPosition())) { scopeShift = (scopeShift + 1) % 3; repaint(); }    // ★修正: 下へ移動
     }
 
 } // namespace ChordMatrix

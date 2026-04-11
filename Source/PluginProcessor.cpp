@@ -42,7 +42,6 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
             sequenceData[s].voices[v].accidental = 0;
         }
 
-        // ★追加: プレビュー用バッファの初期化
         previewSequenceData[s] = sequenceData[s];
     }
 }
@@ -62,24 +61,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
     return { params.begin(), params.end() };
 }
 
-void ChordMatrixAudioProcessor::optimizeVoicing()
-{
-    int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
-    constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
-    int numBars = barsMap[loopIdx];
-
-    int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
-    int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
-    int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-    int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
-    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
-    float beatsPerBar = (float)tsNum * (4.0f / (float)tsDen);
-    int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
-    if (stepsPerBar < 1) stepsPerBar = 1;
-
-    ChordMatrix::VoicingEngine::optimizeVoiceLeading(sequenceData, numBars * stepsPerBar);
-}
-
 void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     lastPPQ = 0.0;
@@ -87,7 +68,8 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
     currentGlobalStep = -1;
     currentSampleRate = static_cast<float>(sampleRate);
 
-    juce::ADSR::Parameters adsrParams{ 0.01f, 0.2f, 0.6f, 0.1f };
+    // ★ADSR修正：Attackを遅く、Sustain/Releaseを加えて豊かな響きに
+    juce::ADSR::Parameters adsrParams{ 0.05f, 0.8f, 0.4f, 0.4f };
     for (auto& env : adsrs) {
         env.setSampleRate(sampleRate);
         env.setParameters(adsrParams);
@@ -205,7 +187,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep)
         {
-            // ★修正: 再生プレビュー中なら previewSequenceData を参照する（動的メモリ確保ゼロのルーティング）
             const auto& sData = isPlayingModulationPreview.load() ? previewSequenceData[stepInLoop] : sequenceData[stepInLoop];
 
             std::array<int, 7> vps;
@@ -226,7 +207,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 float chordDurationSec = static_cast<float>(sData.gateLength) * (60.0f / currentBPM);
                 float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.95f);
 
-                juce::ADSR::Parameters mainParams{ 0.05f, activeDecay, 0.3f, 0.1f };
+                // ★ADSR修正：Decayを少し長めに取り、SustainとReleaseを適用
+                juce::ADSR::Parameters mainParams{ 0.02f, activeDecay, 0.4f, 0.4f };
 
                 for (int i = 0; i < count; ++i)
                 {
@@ -278,15 +260,11 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 }
 
-
 void ChordMatrixAudioProcessor::getStateInformation(juce::MemoryBlock& d)
 {
     auto state = apvts.copyState();
 
-    // 現在のシーケンスを保存
     state.setProperty("seq", juce::MemoryBlock(sequenceData.data(), sizeof(sequenceData)), nullptr);
-
-    // ★追加: Memoryスロットのデータと使用状態フラグを保存
     state.setProperty("memSlots", juce::MemoryBlock(memorySlots.data(), sizeof(memorySlots)), nullptr);
     state.setProperty("memUsed", juce::MemoryBlock(isSlotUsed.data(), sizeof(isSlotUsed)), nullptr);
 
@@ -306,11 +284,9 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s)
         {
             auto mb = tree.getProperty("seq").getBinaryData();
             memcpy(sequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(sequenceData)));
-            // プレビュー用も同期
             memcpy(previewSequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(previewSequenceData)));
         }
 
-        // ★追加: Memoryスロットの復元
         if (tree.hasProperty("memSlots"))
         {
             auto mb = tree.getProperty("memSlots").getBinaryData();
