@@ -41,6 +41,9 @@ ChordMatrixAudioProcessor::ChordMatrixAudioProcessor()
             sequenceData[s].voices[v].octaveShift = 0;
             sequenceData[s].voices[v].accidental = 0;
         }
+
+        // ★追加: プレビュー用バッファの初期化
+        previewSequenceData[s] = sequenceData[s];
     }
 }
 
@@ -202,7 +205,9 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         if (stepIdx != currentGlobalStep)
         {
-            const auto& sData = sequenceData[stepInLoop];
+            // ★修正: 再生プレビュー中なら previewSequenceData を参照する（動的メモリ確保ゼロのルーティング）
+            const auto& sData = isPlayingModulationPreview.load() ? previewSequenceData[stepInLoop] : sequenceData[stepInLoop];
+
             std::array<int, 7> vps;
             int count = ChordMatrix::VoicingEngine::getVoicedPitches(sData, vps);
 
@@ -218,7 +223,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                     }
                 }
 
-                // ★修正: Step長を秒数に変換し、その85%（きもち短め）をDecayに設定。Sustainは0.0で自然減衰。
                 float chordDurationSec = static_cast<float>(sData.gateLength) * (60.0f / currentBPM);
                 float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.85f);
 

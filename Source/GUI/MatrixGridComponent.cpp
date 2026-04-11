@@ -5,12 +5,86 @@
 namespace ChordMatrix {
 
     MatrixGridComponent::MatrixGridComponent(ChordMatrixAudioProcessor& p) : audioProcessor(p) {
-        // ローカル座標（コンポーネントの左端基準）でボタンを配置
-        progBtnBounds = juce::Rectangle<int>(0, 15, 110, 30);
-        allClearBtnBounds = juce::Rectangle<int>(120, 15, 110, 30);
-        dragMidiBtnBounds = juce::Rectangle<int>(240, 15, 110, 30);
+        // ボタン配置の調整（leftMarginを加算）
+        progBtnBounds = juce::Rectangle<int>(leftMargin, 15, 110, 30);
+        allClearBtnBounds = juce::Rectangle<int>(leftMargin + 120, 15, 110, 30);
+        dragMidiBtnBounds = juce::Rectangle<int>(leftMargin + 240, 15, 110, 30);
+        modulationBtnBounds = juce::Rectangle<int>(leftMargin + 360, 15, 110, 30);
+
+        setupModulationPanel();
     }
+
     MatrixGridComponent::~MatrixGridComponent() {}
+
+    void MatrixGridComponent::setupModulationPanel() {
+        addAndMakeVisible(modTargetBarMenu);
+        addAndMakeVisible(modKeyMenu);
+        addAndMakeVisible(modScaleMenu);
+        addAndMakeVisible(btnModPreview);
+        addAndMakeVisible(btnModApply);
+        addAndMakeVisible(btnModCancel);
+
+        for (int i = 1; i <= 16; ++i) modTargetBarMenu.addItem("Bar " + juce::String(i), i);
+        for (int i = 0; i < 12; ++i) modKeyMenu.addItem(MusicTheory::getNoteName(i), i + 1);
+        auto scales = MusicTheory::getScaleNames();
+        for (int i = 0; i < scales.size(); ++i) modScaleMenu.addItem(scales[i], i + 1);
+
+        modTargetBarMenu.setSelectedId(5, juce::dontSendNotification); // デフォルトBar5
+        modKeyMenu.setSelectedId(4, juce::dontSendNotification);       // デフォルトD#
+        modScaleMenu.setSelectedId(2, juce::dontSendNotification);     // デフォルトNatural Minor
+
+        auto setBtnStyle = [](juce::TextButton& btn, juce::Colour c) {
+            btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
+            btn.setColour(juce::TextButton::textColourOffId, c);
+            };
+        setBtnStyle(btnModPreview, juce::Colours::cyan);
+        setBtnStyle(btnModApply, juce::Colours::hotpink);
+        setBtnStyle(btnModCancel, juce::Colours::grey);
+
+        // PREVIEW ロジック
+        btnModPreview.onClick = [this] {
+            int targetBar = modTargetBarMenu.getSelectedId() - 1;
+            int targetKey = modKeyMenu.getSelectedId() - 1;
+            int targetScale = modScaleMenu.getSelectedId() - 1;
+
+            MusicTheory::applyModulation(audioProcessor.sequenceData, audioProcessor.previewSequenceData,
+                targetBar, targetKey, targetScale, 0, getStepsPerBar());
+
+            audioProcessor.isPlayingModulationPreview.store(true);
+
+            float ppq = getPpqPerStep();
+            audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1)) * static_cast<double>(getStepsPerBar()) * static_cast<double>(ppq);
+            audioProcessor.isInternalPlaying = true;
+
+            repaint();
+            };
+
+        // APPLY ロジック
+        btnModApply.onClick = [this] {
+            audioProcessor.sequenceData = audioProcessor.previewSequenceData;
+            audioProcessor.isPlayingModulationPreview.store(false);
+            audioProcessor.isInternalPlaying = false;
+            isModulationPanelOpen = false;
+            resized();
+            if (onRepaintRequest) onRepaintRequest();
+            };
+
+        // CANCEL ロジック
+        btnModCancel.onClick = [this] {
+            audioProcessor.isPlayingModulationPreview.store(false);
+            audioProcessor.isInternalPlaying = false;
+            isModulationPanelOpen = false;
+            resized();
+            repaint();
+            };
+
+        modTargetBarMenu.setVisible(false);
+        modKeyMenu.setVisible(false);
+        modScaleMenu.setVisible(false);
+        btnModPreview.setVisible(false);
+        btnModApply.setVisible(false);
+        btnModCancel.setVisible(false);
+    }
 
     void MatrixGridComponent::setProgressionMode(bool isProg) {
         isProgressionMode = isProg;
@@ -37,7 +111,8 @@ namespace ChordMatrix {
             float dist = static_cast<float>(targetS - prevS) * ppq;
             bool covers = false;
             for (int v = 0; v < 7; ++v) {
-                if (audioProcessor.sequenceData[prevS].voices[v].isActive && audioProcessor.sequenceData[prevS].gateLength > dist + 0.001f) {
+                const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
+                if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) {
                     covers = true; break;
                 }
             }
@@ -47,19 +122,35 @@ namespace ChordMatrix {
     }
 
     juce::Rectangle<float> MatrixGridComponent::getCellBounds(int s, int v, float stepW) const {
-        return { static_cast<float>(s) * stepW, 155.0f + static_cast<float>(v) * cellHeight, stepW, cellHeight - 2.0f };
+        return { leftMargin + static_cast<float>(s) * stepW, 155.0f + static_cast<float>(v) * cellHeight, stepW, cellHeight - 2.0f };
     }
 
     juce::Rectangle<float> MatrixGridComponent::getStepHeaderBounds(int s, float stepW) const {
-        return { static_cast<float>(s) * stepW, 155.0f - headerHeight - 35.0f, stepW, headerHeight - 5.0f };
+        return { leftMargin + static_cast<float>(s) * stepW, 155.0f - headerHeight - 35.0f, stepW, headerHeight - 5.0f };
     }
 
     juce::Rectangle<float> MatrixGridComponent::getBarButtonBounds(int i) const {
         float w = seqTotalWidth / 8.0f;
-        return { static_cast<float>(i % 8) * w, 555.0f + static_cast<float>(i / 8) * 35.0f, w - 8.0f, 30.0f };
+        return { leftMargin + static_cast<float>(i % 8) * w, 555.0f + static_cast<float>(i / 8) * 35.0f, w - 8.0f, 30.0f };
     }
 
-    void MatrixGridComponent::resized() {}
+    void MatrixGridComponent::resized() {
+        if (isModulationPanelOpen) {
+            int py = 640;
+            modTargetBarMenu.setBounds(static_cast<int>(leftMargin), py, 100, 30);
+            modKeyMenu.setBounds(static_cast<int>(leftMargin) + 110, py, 80, 30);
+            modScaleMenu.setBounds(static_cast<int>(leftMargin) + 200, py, 150, 30);
+            btnModPreview.setBounds(static_cast<int>(leftMargin) + 370, py, 80, 30);
+            btnModApply.setBounds(static_cast<int>(leftMargin) + 460, py, 80, 30);
+            btnModCancel.setBounds(static_cast<int>(leftMargin) + 550, py, 80, 30);
+        }
+        modTargetBarMenu.setVisible(isModulationPanelOpen);
+        modKeyMenu.setVisible(isModulationPanelOpen);
+        modScaleMenu.setVisible(isModulationPanelOpen);
+        btnModPreview.setVisible(isModulationPanelOpen);
+        btnModApply.setVisible(isModulationPanelOpen);
+        btnModCancel.setVisible(isModulationPanelOpen);
+    }
 
     void MatrixGridComponent::paint(juce::Graphics& g) {
         const auto bg = juce::Colour(0xff1a1a1a);
@@ -70,7 +161,6 @@ namespace ChordMatrix {
 
         g.fillAll(bg);
 
-        // ボタンの描画を最前面（MatrixGrid内）で実行
         auto drawBtn = [&](int x, int y, int w, int h, const char* txt, bool active, juce::Colour c) {
             g.setColour(active ? c : juce::Colour(0xff3a3a3a));
             g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h), 4.0f);
@@ -81,28 +171,29 @@ namespace ChordMatrix {
         drawBtn(progBtnBounds.getX(), progBtnBounds.getY(), progBtnBounds.getWidth(), progBtnBounds.getHeight(), "PROGRESSION", isProgressionMode, juce::Colours::hotpink.withAlpha(0.8f));
         drawBtn(allClearBtnBounds.getX(), allClearBtnBounds.getY(), allClearBtnBounds.getWidth(), allClearBtnBounds.getHeight(), "ALL CLEAR", false, juce::Colours::indianred.withAlpha(0.8f));
         drawBtn(dragMidiBtnBounds.getX(), dragMidiBtnBounds.getY(), dragMidiBtnBounds.getWidth(), dragMidiBtnBounds.getHeight(), "DRAG MIDI", false, juce::Colours::cyan.withAlpha(0.6f));
+        drawBtn(modulationBtnBounds.getX(), modulationBtnBounds.getY(), modulationBtnBounds.getWidth(), modulationBtnBounds.getHeight(), "MODULATION", isModulationPanelOpen, juce::Colours::yellow.withAlpha(0.8f));
 
         if (isProgressionMode) {
             g.setColour(panelBg);
-            g.fillRoundedRectangle(0.0f, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f, 8.0f);
+            g.fillRoundedRectangle(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f, 8.0f);
             g.setColour(juce::Colours::grey);
             g.setFont(juce::Font(24.0f, juce::Font::bold));
-            g.drawText("PROGRESSION BROWSER (Coming Soon)", 0, 155, static_cast<int>(seqTotalWidth), 200, juce::Justification::centred);
+            g.drawText("PROGRESSION BROWSER (Coming Soon)", static_cast<int>(leftMargin), 155, static_cast<int>(seqTotalWidth), 200, juce::Justification::centred);
             return;
         }
 
         g.setFont(12.0f); g.setColour(juce::Colours::grey);
-        g.drawText("INV", -60, 155 - 30, 50, 25, juce::Justification::centredRight);
+        g.drawText("INV", 0, 155 - 30, static_cast<int>(leftMargin) - 10, 25, juce::Justification::centredRight);
 
         const char* vNames[] = { "6/13th", "4/11th", "2/9th", "7th", "5th", "3rd", "Root" };
         for (int i = 0; i < 7; ++i) {
             int textY = 155 + static_cast<int>(static_cast<float>(i) * cellHeight);
-            g.drawText(vNames[i], -60, textY, 50, static_cast<int>(cellHeight), juce::Justification::centredRight);
+            g.drawText(vNames[i], 0, textY, static_cast<int>(leftMargin) - 10, static_cast<int>(cellHeight), juce::Justification::centredRight);
         }
 
         g.setColour(juce::Colours::indianred);
         int delY = 155 + static_cast<int>(7.0f * cellHeight);
-        g.drawText("DEL", -60, delY, 50, 30, juce::Justification::centredRight);
+        g.drawText("DEL", 0, delY, static_cast<int>(leftMargin) - 10, 30, juce::Justification::centredRight);
 
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
@@ -114,10 +205,12 @@ namespace ChordMatrix {
         int stepsPerBeat = juce::roundToInt(beatLengthPpq / ppqPerStep);
         if (stepsPerBeat < 1) stepsPerBeat = 1;
 
+        const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
+
         for (int s = 0; s < stepsPerBar; ) {
             int actS = (editBar * stepsPerBar) + s;
             int effS = getEffectiveStep(actS);
-            auto& effStep = audioProcessor.sequenceData[effS];
+            auto& effStep = activeSeqData[effS];
 
             int runLength = 1;
             for (int nextS = s + 1; nextS < stepsPerBar; ++nextS) {
@@ -126,7 +219,7 @@ namespace ChordMatrix {
                 else break;
             }
 
-            float startX = static_cast<float>(s) * stepW;
+            float startX = leftMargin + static_cast<float>(s) * stepW;
             float runW = static_cast<float>(runLength) * stepW;
             bool isSelected = false;
             for (int i = 0; i < runLength; ++i) {
@@ -138,7 +231,7 @@ namespace ChordMatrix {
             g.fillRoundedRectangle(rHeader.reduced(1.0f), 4.0f);
             g.setColour(isSelected ? activeColor : textLight);
 
-            juce::String recognizedName = VoicingEngine::getRecognizedChordName(audioProcessor.sequenceData, effS, ppqPerStep);
+            juce::String recognizedName = VoicingEngine::getRecognizedChordName(activeSeqData, effS, ppqPerStep);
 
             if (runW <= 60.0f && recognizedName.contains("(")) {
                 juce::String absPart = recognizedName.fromFirstOccurrenceOf("(", false, false).upToFirstOccurrenceOf(")", false, false);
@@ -188,7 +281,7 @@ namespace ChordMatrix {
 
         for (int s = 0; s <= stepsPerBar; ++s) {
             g.setColour((s % stepsPerBeat == 0) ? juce::Colour(0xff555555) : gridLine);
-            g.drawLine(static_cast<float>(s) * stepW, 155.0f - 5.0f, static_cast<float>(s) * stepW, 155.0f + (8.0f * cellHeight), (s % stepsPerBeat == 0) ? 2.0f : 1.0f);
+            g.drawLine(leftMargin + static_cast<float>(s) * stepW, 155.0f - 5.0f, leftMargin + static_cast<float>(s) * stepW, 155.0f + (8.0f * cellHeight), (s % stepsPerBeat == 0) ? 2.0f : 1.0f);
         }
 
         int loopIdx = (int)*audioProcessor.apvts.getRawParameterValue("loopBars");
@@ -203,7 +296,7 @@ namespace ChordMatrix {
             if (playingBar == editBar) {
                 int localStep = currentStepInLoop % stepsPerBar;
                 g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.fillRect(static_cast<float>(localStep) * stepW, 155.0f - 5.0f, stepW, 8.0f * cellHeight + 10.0f);
+                g.fillRect(leftMargin + static_cast<float>(localStep) * stepW, 155.0f - 5.0f, stepW, 8.0f * cellHeight + 10.0f);
             }
         }
 
@@ -219,11 +312,11 @@ namespace ChordMatrix {
             int actS = (editBar * stepsPerBar) + s;
             for (int v = 0; v < 7; ++v) {
                 int voiceIdx = 6 - v;
-                auto& voice = audioProcessor.sequenceData[actS].voices[voiceIdx];
+                auto& voice = activeSeqData[actS].voices[voiceIdx];
 
                 if (voice.isActive) {
                     auto cell = getCellBounds(s, v, stepW);
-                    float safeGate = juce::jlimit(ppqPerStep, 16.0f, audioProcessor.sequenceData[actS].gateLength);
+                    float safeGate = juce::jlimit(ppqPerStep, 16.0f, activeSeqData[actS].gateLength);
                     cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
 
                     g.setColour(activeColor);
@@ -262,6 +355,19 @@ namespace ChordMatrix {
             g.setFont(juce::Font(16.0f, juce::Font::bold));
             g.drawText("BAR " + juce::String(i + 1), r, juce::Justification::centred);
         }
+
+        if (isModulationPanelOpen) {
+            g.setColour(juce::Colour(0xff222222));
+            g.fillRoundedRectangle(leftMargin, 605, seqTotalWidth, 75, 8.0f);
+            g.setColour(juce::Colours::yellow);
+            g.setFont(juce::Font(14.0f, juce::Font::bold));
+            g.drawText("MODULATION ASSISTANT (V-I Approach)", static_cast<int>(leftMargin) + 10, 610, 300, 20, juce::Justification::centredLeft);
+
+            if (audioProcessor.isPlayingModulationPreview.load()) {
+                g.setColour(juce::Colours::red);
+                g.drawText("PREVIEWING...", static_cast<int>(leftMargin) + 300, 610, 100, 20, juce::Justification::centredLeft);
+            }
+        }
     }
 
     void MatrixGridComponent::mouseDown(const juce::MouseEvent& e) {
@@ -269,6 +375,13 @@ namespace ChordMatrix {
 
         if (progBtnBounds.contains(e.getPosition())) {
             isProgressionMode = !isProgressionMode;
+            repaint();
+            return;
+        }
+
+        if (modulationBtnBounds.contains(e.getPosition())) {
+            isModulationPanelOpen = !isModulationPanelOpen;
+            resized();
             repaint();
             return;
         }
@@ -287,6 +400,7 @@ namespace ChordMatrix {
                                 safeThis->audioProcessor.sequenceData[s].voices[v].octaveShift = 0;
                                 safeThis->audioProcessor.sequenceData[s].voices[v].accidental = 0;
                             }
+                            safeThis->audioProcessor.previewSequenceData[s] = safeThis->audioProcessor.sequenceData[s];
                         }
                         if (safeThis->onRepaintRequest) safeThis->onRepaintRequest();
                         safeThis->repaint();
@@ -310,8 +424,17 @@ namespace ChordMatrix {
         bool isLeftClick = e.mods.isLeftButtonDown();
         bool isRightClick = e.mods.isRightButtonDown();
 
+        float localX = static_cast<float>(e.x) - leftMargin;
+        if (localX < 0) {
+            // Check Bar buttons even if click is in left margin X area
+            for (int i = 0; i < 16; ++i) {
+                if (getBarButtonBounds(i).contains(e.position)) goto HandleBarButtonClick;
+            }
+            return;
+        }
+
         if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
-            int localStep = static_cast<int>(static_cast<float>(e.x) / stepW);
+            int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
                 int clickedActS = (editBar * stepsPerBar) + localStep;
                 int effS = getEffectiveStep(clickedActS);
@@ -338,7 +461,7 @@ namespace ChordMatrix {
 
         if (e.y >= 155.0f + 7.0f * cellHeight && e.y < 155.0f + 7.0f * cellHeight + 30.0f) {
             if (isLeftClick) {
-                int localStep = static_cast<int>(static_cast<float>(e.x) / stepW);
+                int localStep = static_cast<int>(localX / stepW);
                 if (localStep < stepsPerBar) {
                     int clickedActS = (editBar * stepsPerBar) + localStep;
                     int effS = getEffectiveStep(clickedActS);
@@ -355,7 +478,7 @@ namespace ChordMatrix {
         }
 
         if (e.y >= 155.0f - headerHeight - 35.0f && e.y < 155.0f - 35.0f) {
-            int localStep = static_cast<int>(static_cast<float>(e.x) / stepW);
+            int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
                 int clickedActS = (editBar * stepsPerBar) + localStep;
                 int effS = getEffectiveStep(clickedActS);
@@ -435,6 +558,7 @@ namespace ChordMatrix {
             }
         }
 
+    HandleBarButtonClick:
         for (int i = 0; i < 16; ++i) {
             if (getBarButtonBounds(i).contains(e.position)) {
                 if (isLeftClick) {
@@ -474,6 +598,9 @@ namespace ChordMatrix {
         float stepW = seqTotalWidth / static_cast<float>(stepsPerBar);
         bool hoveringEdge = false;
 
+        float localX = static_cast<float>(e.x) - leftMargin;
+        if (localX < 0) { setMouseCursor(juce::MouseCursor::NormalCursor); return; }
+
         if (e.y >= 155.0f && e.y < 155.0f + 7.0f * cellHeight) {
             for (int s = 0; s < stepsPerBar; ++s) {
                 int actS = (editBar * stepsPerBar) + s;
@@ -494,7 +621,6 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseDrag(const juce::MouseEvent& e) {
-        // DRAG MIDIボタンのドラッグ (全小節出力)
         if (!isDraggingMidi && dragMidiBtnBounds.contains(e.getMouseDownPosition()) && e.mouseWasDraggedSinceMouseDown()) {
             isDraggingMidi = true;
 
@@ -513,18 +639,11 @@ namespace ChordMatrix {
             return;
         }
 
-        // Barボタンのドラッグ (個別小節出力)
         if (!isDraggingMidi && e.mouseWasDraggedSinceMouseDown()) {
             int stepsPerBar = getStepsPerBar();
-            float w = seqTotalWidth / 8.0f;
             for (int i = 0; i < 16; ++i) {
-                int startX = static_cast<int>(static_cast<float>(i % 8) * w);
-                int startY = 555 + static_cast<int>(static_cast<float>(i / 8) * 35.0f);
-
-                juce::Rectangle<int> barBounds(startX, startY, static_cast<int>(w - 8.0f), 30);
-                if (barBounds.contains(e.getMouseDownPosition())) {
-                    isDraggingMidi = true;
-                    float ppqPerStep = (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 0) ? 1.0f :
+                if (getBarButtonBounds(i).contains(e.getMouseDownPosition().toFloat())) { // ← .toFloat() を追加
+                    isDraggingMidi = true;                    float ppqPerStep = (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 0) ? 1.0f :
                         (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 1) ? 0.5f : 0.25f;
                     ChordMatrix::MidiExport::exportAndDrag(audioProcessor.sequenceData, i, 16, stepsPerBar, ppqPerStep, this);
                     return;
@@ -587,6 +706,9 @@ namespace ChordMatrix {
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
         float stepW = seqTotalWidth / static_cast<float>(stepsPerBar);
+
+        float localX = static_cast<float>(e.x) - leftMargin;
+        if (localX < 0) return;
 
         if (e.y >= 155.0f && e.y < 155.0f + 7.0f * cellHeight) {
             for (int s = 0; s < stepsPerBar; ++s) {

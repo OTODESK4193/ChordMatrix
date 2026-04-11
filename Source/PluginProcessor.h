@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
+#include <array>
 #include "Data/StepData.h"
 #include "Engine/MusicTheory.h"
 #include "Engine/VoicingEngine.h"
@@ -37,6 +38,10 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> sequenceData;
+
+    // ★追加: 転調プレビュー用の非破壊バッファと、再生フラグ
+    std::array<ChordMatrix::StepData, ChordMatrix::TotalSteps> previewSequenceData;
+    std::atomic<bool> isPlayingModulationPreview{ false };
 
     bool isInternalPlaying = false;
     bool isSyncEnabled = true;

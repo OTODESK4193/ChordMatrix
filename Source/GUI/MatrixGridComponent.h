@@ -1,4 +1,5 @@
 #pragma once
+
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../PluginProcessor.h"
 
@@ -31,9 +32,12 @@ namespace ChordMatrix {
         int selectedStep = 0;
         int selectedVoice = -1;
 
+        // ★追加: 左側のラベル表示用マージン（度数表示バグ修正のため）
+        const float leftMargin = 60.0f;
         const float cellHeight = 50.0f;
         const float headerHeight = 60.0f;
-        const float seqTotalWidth = 800.0f;
+        // マージンを除いた、シーケンスグリッドの実際の描画幅
+        const float seqTotalWidth = 740.0f;
 
         bool isDraggingGate = false;
         bool isDraggingChord = false;
@@ -45,12 +49,21 @@ namespace ChordMatrix {
         juce::Rectangle<int> progBtnBounds;
         juce::Rectangle<int> allClearBtnBounds;
         juce::Rectangle<int> dragMidiBtnBounds;
+        juce::Rectangle<int> modulationBtnBounds; // ★追加: 転調ボタン
+
+        // ★追加: Modulation Panel 用のUIコンポーネント群
+        bool isModulationPanelOpen = false;
+        juce::ComboBox modTargetBarMenu, modKeyMenu, modScaleMenu;
+        juce::TextButton btnModPreview{ "PREVIEW" }, btnModApply{ "APPLY" }, btnModCancel{ "CANCEL" };
+        juce::Label modTitleLabel{ "", "MODULATION ASSISTANT" };
 
         int getEffectiveStep(int targetS) const;
 
         juce::Rectangle<float> getCellBounds(int step, int voiceRow, float stepW) const;
         juce::Rectangle<float> getStepHeaderBounds(int step, float stepW) const;
         juce::Rectangle<float> getBarButtonBounds(int barIndex) const;
+
+        void setupModulationPanel();
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MatrixGridComponent)
     };
