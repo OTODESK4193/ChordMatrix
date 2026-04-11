@@ -11,7 +11,8 @@ namespace ChordMatrix
     public:
         enum ModulationMethod {
             DirectDominant = 0, // V -> I
-            TwoFiveOne = 1      // ii -> V -> I
+            TwoFiveOne = 1,     // ii -> V -> I
+            TritoneSub = 2      // SubV7 -> I (裏コード)
         };
 
         // ターゲット小節に向けて、直前の小節に転調用のコード進行を自動生成しプレビューバッファに書き込む

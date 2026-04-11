@@ -32,11 +32,9 @@ namespace ChordMatrix {
         int selectedStep = 0;
         int selectedVoice = -1;
 
-        // ★追加: 左側のラベル表示用マージン（度数表示バグ修正のため）
         const float leftMargin = 60.0f;
         const float cellHeight = 50.0f;
         const float headerHeight = 60.0f;
-        // マージンを除いた、シーケンスグリッドの実際の描画幅
         const float seqTotalWidth = 740.0f;
 
         bool isDraggingGate = false;
@@ -49,11 +47,10 @@ namespace ChordMatrix {
         juce::Rectangle<int> progBtnBounds;
         juce::Rectangle<int> allClearBtnBounds;
         juce::Rectangle<int> dragMidiBtnBounds;
-        juce::Rectangle<int> modulationBtnBounds; // ★追加: 転調ボタン
+        juce::Rectangle<int> modulationBtnBounds;
 
-        // ★追加: Modulation Panel 用のUIコンポーネント群
         bool isModulationPanelOpen = false;
-        juce::ComboBox modTargetBarMenu, modKeyMenu, modScaleMenu;
+        juce::ComboBox modTargetBarMenu, modKeyMenu, modScaleMenu, modMethodMenu;
         juce::TextButton btnModPreview{ "PREVIEW" }, btnModApply{ "APPLY" }, btnModCancel{ "CANCEL" };
         juce::Label modTitleLabel{ "", "MODULATION ASSISTANT" };
 

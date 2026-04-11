@@ -29,16 +29,14 @@ namespace ChordMatrix
             // ---------------------------------------------------------
             // パターンB: ツー・ファイブ・ワン (ii - V - I)
             // ---------------------------------------------------------
-
-            // 前半: ターゲットに対する「ii」コード
             for (int i = halfBar; i < halfBar + quarterBar; ++i) {
                 int s = prevStepStart + i;
                 dest[s].keyRoot = targetKey;
-                dest[s].scaleType = targetScale; // Targetのスケールに依存させる (Minorなら m7b5 になる)
+                dest[s].scaleType = targetScale;
                 dest[s].chordDegree = 1;         // 度数: II
 
                 for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0); // Root, 3rd, 5th, 7th
+                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
                     dest[s].voices[v].octaveShift = 0;
                     dest[s].voices[v].accidental = 0;
                 }
@@ -46,15 +44,37 @@ namespace ChordMatrix
                 dest[s].gateLength = 0.25f;
             }
 
-            // 後半: ターゲットに対する「V7」コード
             for (int i = halfBar + quarterBar; i < stepsPerBar; ++i) {
                 int s = prevStepStart + i;
                 dest[s].keyRoot = targetKey;
-                dest[s].scaleType = 0;   // 強制的にメジャー系スケールを適用しドミナント化
+                dest[s].scaleType = 0;
                 dest[s].chordDegree = 4; // 度数: V
 
                 for (int v = 0; v < 7; ++v) {
-                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0); // Root, 3rd, 5th, 7th
+                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
+                    dest[s].voices[v].octaveShift = 0;
+                    dest[s].voices[v].accidental = 0;
+                }
+                dest[s].voicingMode = 0;
+                dest[s].gateLength = 0.25f;
+            }
+        }
+        else if (method == TritoneSub) {
+            // ---------------------------------------------------------
+            // パターンC: 裏コード (SubV7 - I)
+            // ターゲットキーの半音上（トライトーン先のV7）を生成する
+            // (targetKey + 6) % 12 をキーとするV7コードは、Targetの半音上のドミナント7thになる。
+            // ---------------------------------------------------------
+            int subVKey = (targetKey + 6) % 12;
+
+            for (int i = halfBar; i < stepsPerBar; ++i) {
+                int s = prevStepStart + i;
+                dest[s].keyRoot = subVKey;
+                dest[s].scaleType = 0;   // Major
+                dest[s].chordDegree = 4; // V
+
+                for (int v = 0; v < 7; ++v) {
+                    dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
                     dest[s].voices[v].octaveShift = 0;
                     dest[s].voices[v].accidental = 0;
                 }

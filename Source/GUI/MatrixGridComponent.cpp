@@ -1,12 +1,11 @@
 #include "MatrixGridComponent.h"
 #include "../Engine/VoicingEngine.h"
 #include "../Engine/MidiExport.h"
-#include "../Engine/ProgressionEngine.h" // ★これを追加
+#include "../Engine/ProgressionEngine.h"
 
 namespace ChordMatrix {
 
     MatrixGridComponent::MatrixGridComponent(ChordMatrixAudioProcessor& p) : audioProcessor(p) {
-        // ボタン配置の調整（leftMarginを加算）
         progBtnBounds = juce::Rectangle<int>(leftMargin, 15, 110, 30);
         allClearBtnBounds = juce::Rectangle<int>(leftMargin + 120, 15, 110, 30);
         dragMidiBtnBounds = juce::Rectangle<int>(leftMargin + 240, 15, 110, 30);
@@ -21,6 +20,7 @@ namespace ChordMatrix {
         addAndMakeVisible(modTargetBarMenu);
         addAndMakeVisible(modKeyMenu);
         addAndMakeVisible(modScaleMenu);
+        addAndMakeVisible(modMethodMenu);
         addAndMakeVisible(btnModPreview);
         addAndMakeVisible(btnModApply);
         addAndMakeVisible(btnModCancel);
@@ -30,9 +30,14 @@ namespace ChordMatrix {
         auto scales = MusicTheory::getScaleNames();
         for (int i = 0; i < scales.size(); ++i) modScaleMenu.addItem(scales[i], i + 1);
 
-        modTargetBarMenu.setSelectedId(5, juce::dontSendNotification); // デフォルトBar5
-        modKeyMenu.setSelectedId(4, juce::dontSendNotification);       // デフォルトD#
-        modScaleMenu.setSelectedId(2, juce::dontSendNotification);     // デフォルトNatural Minor
+        modMethodMenu.addItem("Direct (V - I)", 1);
+        modMethodMenu.addItem("Standard (ii - V - I)", 2);
+        modMethodMenu.addItem("Tritone Sub (SubV - I)", 3);
+
+        modTargetBarMenu.setSelectedId(5, juce::dontSendNotification);
+        modKeyMenu.setSelectedId(4, juce::dontSendNotification);
+        modScaleMenu.setSelectedId(2, juce::dontSendNotification);
+        modMethodMenu.setSelectedId(2, juce::dontSendNotification);
 
         auto setBtnStyle = [](juce::TextButton& btn, juce::Colour c) {
             btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
@@ -42,26 +47,24 @@ namespace ChordMatrix {
         setBtnStyle(btnModApply, juce::Colours::hotpink);
         setBtnStyle(btnModCancel, juce::Colours::grey);
 
-        // PREVIEW ロジック
         btnModPreview.onClick = [this] {
             int targetBar = modTargetBarMenu.getSelectedId() - 1;
             int targetKey = modKeyMenu.getSelectedId() - 1;
             int targetScale = modScaleMenu.getSelectedId() - 1;
+            int methodIdx = modMethodMenu.getSelectedId() - 1;
 
-            // ★修正: ProgressionEngine を呼び出し、メソッドに 1 (TwoFiveOne) を指定
             ProgressionEngine::applyModulation(audioProcessor.sequenceData, audioProcessor.previewSequenceData,
-                targetBar, targetKey, targetScale, ProgressionEngine::TwoFiveOne, getStepsPerBar());
+                targetBar, targetKey, targetScale, methodIdx, getStepsPerBar());
 
             audioProcessor.isPlayingModulationPreview.store(true);
 
             float ppq = getPpqPerStep();
-            audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1) * getStepsPerBar()) * ppq;
+            audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1)) * static_cast<double>(getStepsPerBar()) * static_cast<double>(ppq);
             audioProcessor.isInternalPlaying = true;
 
             repaint();
             };
 
-        // APPLY ロジック
         btnModApply.onClick = [this] {
             audioProcessor.sequenceData = audioProcessor.previewSequenceData;
             audioProcessor.isPlayingModulationPreview.store(false);
@@ -71,7 +74,6 @@ namespace ChordMatrix {
             if (onRepaintRequest) onRepaintRequest();
             };
 
-        // CANCEL ロジック
         btnModCancel.onClick = [this] {
             audioProcessor.isPlayingModulationPreview.store(false);
             audioProcessor.isInternalPlaying = false;
@@ -83,6 +85,7 @@ namespace ChordMatrix {
         modTargetBarMenu.setVisible(false);
         modKeyMenu.setVisible(false);
         modScaleMenu.setVisible(false);
+        modMethodMenu.setVisible(false);
         btnModPreview.setVisible(false);
         btnModApply.setVisible(false);
         btnModCancel.setVisible(false);
@@ -138,17 +141,19 @@ namespace ChordMatrix {
 
     void MatrixGridComponent::resized() {
         if (isModulationPanelOpen) {
-            int py = 665; // ★修正: 640 から 665 に変更（25px下へ）
-            modTargetBarMenu.setBounds(static_cast<int>(leftMargin), py, 100, 30);
-            modKeyMenu.setBounds(static_cast<int>(leftMargin) + 110, py, 80, 30);
-            modScaleMenu.setBounds(static_cast<int>(leftMargin) + 200, py, 150, 30);
-            btnModPreview.setBounds(static_cast<int>(leftMargin) + 370, py, 80, 30);
-            btnModApply.setBounds(static_cast<int>(leftMargin) + 460, py, 80, 30);
-            btnModCancel.setBounds(static_cast<int>(leftMargin) + 550, py, 80, 30);
+            int py = 665; // 重なりを回避するためにY座標を665に調整
+            modTargetBarMenu.setBounds(static_cast<int>(leftMargin) + 10, py, 85, 30);
+            modKeyMenu.setBounds(static_cast<int>(leftMargin) + 100, py, 65, 30);
+            modScaleMenu.setBounds(static_cast<int>(leftMargin) + 170, py, 130, 30);
+            modMethodMenu.setBounds(static_cast<int>(leftMargin) + 305, py, 160, 30);
+            btnModPreview.setBounds(static_cast<int>(leftMargin) + 475, py, 80, 30);
+            btnModApply.setBounds(static_cast<int>(leftMargin) + 560, py, 80, 30);
+            btnModCancel.setBounds(static_cast<int>(leftMargin) + 645, py, 80, 30);
         }
         modTargetBarMenu.setVisible(isModulationPanelOpen);
         modKeyMenu.setVisible(isModulationPanelOpen);
         modScaleMenu.setVisible(isModulationPanelOpen);
+        modMethodMenu.setVisible(isModulationPanelOpen);
         btnModPreview.setVisible(isModulationPanelOpen);
         btnModApply.setVisible(isModulationPanelOpen);
         btnModCancel.setVisible(isModulationPanelOpen);
@@ -358,23 +363,21 @@ namespace ChordMatrix {
             g.drawText("BAR " + juce::String(i + 1), r, juce::Justification::centred);
         }
 
-        // paintメソッドの最後の方
         if (isModulationPanelOpen) {
             g.setColour(juce::Colour(0xff222222));
-            // ★修正: Y座標を 605 から 635 に変更
             g.fillRoundedRectangle(leftMargin, 635, seqTotalWidth, 75, 8.0f);
 
+            juce::String approachName = modMethodMenu.getText();
             g.setColour(juce::Colours::yellow);
             g.setFont(juce::Font(14.0f, juce::Font::bold));
-            // ★修正: Y座標を 610 から 640 に変更
-            g.drawText("MODULATION ASSISTANT (V-I Approach)", static_cast<int>(leftMargin) + 10, 640, 300, 20, juce::Justification::centredLeft);
+            g.drawText("MODULATION ASSISTANT (" + approachName + ")", static_cast<int>(leftMargin) + 10, 640, 350, 20, juce::Justification::centredLeft);
 
             if (audioProcessor.isPlayingModulationPreview.load()) {
                 g.setColour(juce::Colours::red);
-                // ★修正: Y座標を 610 から 640 に変更
-                g.drawText("PREVIEWING...", static_cast<int>(leftMargin) + 300, 640, 100, 20, juce::Justification::centredLeft);
+                g.drawText("PREVIEWING...", static_cast<int>(leftMargin) + 380, 640, 100, 20, juce::Justification::centredLeft);
             }
-        }    }
+        }
+    }
 
     void MatrixGridComponent::mouseDown(const juce::MouseEvent& e) {
         isDraggingMidi = false;
@@ -432,7 +435,6 @@ namespace ChordMatrix {
 
         float localX = static_cast<float>(e.x) - leftMargin;
         if (localX < 0) {
-            // Check Bar buttons even if click is in left margin X area
             for (int i = 0; i < 16; ++i) {
                 if (getBarButtonBounds(i).contains(e.position)) goto HandleBarButtonClick;
             }
@@ -648,8 +650,10 @@ namespace ChordMatrix {
         if (!isDraggingMidi && e.mouseWasDraggedSinceMouseDown()) {
             int stepsPerBar = getStepsPerBar();
             for (int i = 0; i < 16; ++i) {
-                if (getBarButtonBounds(i).contains(e.getMouseDownPosition().toFloat())) { // ← .toFloat() を追加
-                    isDraggingMidi = true;                    float ppqPerStep = (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 0) ? 1.0f :
+                // ★修正: toFloat() を使用して型不一致エラーを解消
+                if (getBarButtonBounds(i).contains(e.getMouseDownPosition().toFloat())) {
+                    isDraggingMidi = true;
+                    float ppqPerStep = (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 0) ? 1.0f :
                         (static_cast<int>(*audioProcessor.apvts.getRawParameterValue("stepSize")) == 1) ? 0.5f : 0.25f;
                     ChordMatrix::MidiExport::exportAndDrag(audioProcessor.sequenceData, i, 16, stepsPerBar, ppqPerStep, this);
                     return;
