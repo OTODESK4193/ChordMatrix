@@ -170,7 +170,7 @@ namespace ChordMatrix {
         drawScopeToggle(scopeShift, toggleX, 305, toggleW, 30);
 
         // ==============================================================================
-        // ★修正: 左下の巨大コード表示枠。見切れを防ぐため drawFittedText を活用して枠内に収める
+        // ★修正: 縮小限界（0.2f）を付与し、フォントサイズを枠に最適化して見切れを根絶
         // ==============================================================================
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
 
@@ -187,18 +187,18 @@ namespace ChordMatrix {
             juce::String absName = inspectorChordName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
 
             g.setColour(juce::Colour(0xffffa500));
-            g.setFont(juce::Font(54.0f, juce::Font::bold));
-            // はみ出る場合は自動で文字が縮小される
-            g.drawFittedText(relName, textArea.removeFromTop(textArea.getHeight() * 2 / 3), juce::Justification::centredBottom, 1, 0.8f);
+            g.setFont(juce::Font(46.0f, juce::Font::bold)); // 縦にはみ出ない安全なサイズ
+            // 引数末尾の 0.2f が「横幅が足りない時は20%の細さまで縮めてOK」という強力な見切れ防止設定
+            g.drawFittedText(relName, textArea.removeFromTop(textArea.getHeight() * 3 / 5), juce::Justification::centredBottom, 1, 0.2f);
 
             g.setColour(juce::Colours::white.withAlpha(0.8f));
-            g.setFont(juce::Font(26.0f, juce::Font::bold));
-            g.drawFittedText(absName, textArea, juce::Justification::centredTop, 1, 0.8f);
+            g.setFont(juce::Font(24.0f, juce::Font::bold));
+            g.drawFittedText(absName, textArea, juce::Justification::centredTop, 1, 0.2f);
         }
         else {
             g.setColour(juce::Colour(0xffffa500));
-            g.setFont(juce::Font(48.0f, juce::Font::bold));
-            g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.8f);
+            g.setFont(juce::Font(42.0f, juce::Font::bold));
+            g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.2f);
         }
     }
 

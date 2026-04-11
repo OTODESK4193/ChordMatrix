@@ -252,16 +252,17 @@ namespace ChordMatrix {
 
                 g.setFont(juce::Font(13.0f, juce::Font::bold));
                 g.setColour(juce::Colour(0xffffa500));
-                g.drawFittedText(relName, textRect.removeFromTop(textRect.getHeight() / 2), juce::Justification::centredBottom, 1, 0.7f);
+                // ★修正: 0.1f まで縮小を許容し、ヘッダーでも絶対に見切れさせない
+                g.drawFittedText(relName, textRect.removeFromTop(textRect.getHeight() / 2), juce::Justification::centredBottom, 1, 0.1f);
 
                 g.setFont(juce::Font(12.0f, juce::Font::plain));
                 g.setColour(juce::Colours::white);
-                g.drawFittedText(absName, textRect, juce::Justification::centredTop, 1, 0.7f);
+                g.drawFittedText(absName, textRect, juce::Justification::centredTop, 1, 0.1f);
             }
             else {
                 g.setFont(juce::Font(13.0f, juce::Font::bold));
                 g.setColour(juce::Colour(0xffffa500));
-                g.drawFittedText(recognizedName, textRect, juce::Justification::centred, 2, 0.7f);
+                g.drawFittedText(recognizedName, textRect, juce::Justification::centred, 2, 0.1f);
             }
 
             juce::Rectangle<float> rInv(startX, 155.0f - 30.0f, runW, 25.0f);
@@ -335,7 +336,7 @@ namespace ChordMatrix {
                     }
 
                     // ==============================================================================
-                    // ★修正: ♯、♭、オクターブの描画。セルの中心に正確に描画する
+                    // ★修正: ♯、♭、オクターブの描画。超細いセルでも見切れずに自動で縮小させる
                     // ==============================================================================
                     juce::String label;
                     if (voice.octaveShift != 0) {
@@ -351,8 +352,7 @@ namespace ChordMatrix {
                     if (label.isNotEmpty()) {
                         g.setColour(bg);
                         g.setFont(juce::Font(14.0f, juce::Font::bold));
-                        // セルの幅が狭くてもはみ出さないよう drawFittedText に変更
-                        g.drawFittedText(label, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1);
+                        g.drawFittedText(label, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.1f);
                     }
                 }
             }
@@ -375,7 +375,8 @@ namespace ChordMatrix {
             juce::String approachName = modMethodMenu.getText();
             g.setColour(juce::Colours::yellow);
             g.setFont(juce::Font(14.0f, juce::Font::bold));
-            g.drawText("MODULATION ASSISTANT (" + approachName + ")", static_cast<int>(leftMargin) + 10, 640, 350, 20, juce::Justification::centredLeft);
+            // ★修正: パネルタイトルも念のため自動縮小を有効化
+            g.drawFittedText("MODULATION ASSISTANT (" + approachName + ")", static_cast<int>(leftMargin) + 10, 640, 350, 20, juce::Justification::centredLeft, 1, 0.5f);
 
             if (audioProcessor.isPlayingModulationPreview.load()) {
                 g.setColour(juce::Colours::red);
@@ -424,9 +425,6 @@ namespace ChordMatrix {
             return;
         }
 
-        // ==============================================================================
-        // ★修正: パネルが開いている時やプレビュー中はグリッド操作を完全にブロックする
-        // ==============================================================================
         if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         isDraggingGate = false;
@@ -606,7 +604,6 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseMove(const juce::MouseEvent& e) {
-        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
         if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) {
             setMouseCursor(juce::MouseCursor::NormalCursor); return;
         }
@@ -671,7 +668,6 @@ namespace ChordMatrix {
             }
         }
 
-        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
         if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int stepsPerBar = getStepsPerBar();
@@ -722,7 +718,6 @@ namespace ChordMatrix {
     }
 
     void MatrixGridComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-        // ★修正: パネルが開いている時やプレビュー中はグリッド操作ブロック
         if (isProgressionMode || isModulationPanelOpen || audioProcessor.isPlayingModulationPreview.load()) return;
 
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
