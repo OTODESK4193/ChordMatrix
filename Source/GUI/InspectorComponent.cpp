@@ -46,27 +46,26 @@ namespace ChordMatrix {
 
         setupCombo(voicingMenu, voicingLabel);
 
-        // ★修正: Drop 3 を復活させ、全20種類のIDをエンジンと完全に同期
-        voicingMenu.addItem("Close", 1);           // ID: 0
-        voicingMenu.addItem("Drop 2", 2);          // ID: 1
-        voicingMenu.addItem("Drop 3", 3);          // ID: 2 (★抜けていた箇所)
-        voicingMenu.addItem("Spread", 4);          // ID: 3
-        voicingMenu.addItem("Rootless A", 5);      // ID: 4
-        voicingMenu.addItem("Rootless B", 6);      // ID: 5
-        voicingMenu.addItem("UST (bII)", 7);       // ID: 6
-        voicingMenu.addItem("UST (bVI)", 8);       // ID: 7
-        voicingMenu.addItem("Quartal (4ths)", 9);  // ID: 8
-        voicingMenu.addItem("Shell (1-3-7)", 10);  // ID: 9
-        voicingMenu.addItem("Drop 2 & 4", 11);     // ID: 10
-        voicingMenu.addItem("Drop 2 & 3", 12);     // ID: 11
-        voicingMenu.addItem("So What (m11)", 13);  // ID: 12
-        voicingMenu.addItem("Cluster (2nds)", 14); // ID: 13
-        voicingMenu.addItem("Kenny Barron", 15);   // ID: 14
-        voicingMenu.addItem("Block Chords", 16);   // ID: 15
-        voicingMenu.addItem("UST (bIII)", 17);     // ID: 16
-        voicingMenu.addItem("UST (bV)", 18);       // ID: 17
-        voicingMenu.addItem("UST (VI)", 19);       // ID: 18
-        voicingMenu.addItem("UST (II)", 20);       // ID: 19
+        voicingMenu.addItem("Close", 1);
+        voicingMenu.addItem("Drop 2", 2);
+        voicingMenu.addItem("Drop 3", 3);
+        voicingMenu.addItem("Spread", 4);
+        voicingMenu.addItem("Rootless A", 5);
+        voicingMenu.addItem("Rootless B", 6);
+        voicingMenu.addItem("UST (bII)", 7);
+        voicingMenu.addItem("UST (bVI)", 8);
+        voicingMenu.addItem("Quartal (4ths)", 9);
+        voicingMenu.addItem("Shell (1-3-7)", 10);
+        voicingMenu.addItem("Drop 2 & 4", 11);
+        voicingMenu.addItem("Drop 2 & 3", 12);
+        voicingMenu.addItem("So What (m11)", 13);
+        voicingMenu.addItem("Cluster (2nds)", 14);
+        voicingMenu.addItem("Kenny Barron", 15);
+        voicingMenu.addItem("Block Chords", 16);
+        voicingMenu.addItem("UST (bIII)", 17);
+        voicingMenu.addItem("UST (bV)", 18);
+        voicingMenu.addItem("UST (VI)", 19);
+        voicingMenu.addItem("UST (II)", 20);
 
         voicingMenu.onChange = [this] {
             applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; });
@@ -232,10 +231,8 @@ namespace ChordMatrix {
 
             g.setColour(c.withAlpha(0.3f));
             g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
-
             g.setColour(c);
             g.drawRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f, 1.0f);
-
             g.setColour(juce::Colours::white);
             g.setFont(11.0f);
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
@@ -249,17 +246,17 @@ namespace ChordMatrix {
         drawScopeToggle(scopeOptimize, toggleX, 305, toggleW, 30);
         drawScopeToggle(scopeShift, toggleX, 350, toggleW, 30);
 
+        int effStep = getEffectiveStep(selectedStep);
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
-        juce::Rectangle<int> chordArea(20, 415, 340, 140);
 
+        // コードネーム表示エリア
+        juce::Rectangle<int> chordArea(20, 415, 340, 140);
         g.setColour(juce::Colour(0xff2a2a2a));
         g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
-
         g.setColour(juce::Colours::black.withAlpha(0.6f));
         g.drawRoundedRectangle(chordArea.toFloat(), 8.0f, 2.0f);
 
         juce::Rectangle<int> textArea = chordArea.reduced(10);
-
         if (inspectorChordName.contains("\n")) {
             juce::String part1 = inspectorChordName.upToFirstOccurrenceOf("\n", false, false).trim();
             juce::String part2 = inspectorChordName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
@@ -280,6 +277,21 @@ namespace ChordMatrix {
             g.setFont(juce::Font(42.0f, juce::Font::bold));
             g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.2f);
         }
+
+        // ★新規追加: スケール構成音の表示エリア（余白を利用）
+        juce::Rectangle<int> scaleArea(20, 565, 340, 35);
+        g.setColour(juce::Colour(0xff222222));
+        g.fillRoundedRectangle(scaleArea.toFloat(), 6.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.5f));
+        g.drawRoundedRectangle(scaleArea.toFloat(), 6.0f, 1.0f);
+
+        auto scaleNotes = MusicTheory::getScaleNoteNames(activeSeqData[effStep].keyRoot, activeSeqData[effStep].scaleType);
+        juce::String scaleText = "R:" + scaleNotes[0] + "  2nd:" + scaleNotes[1] + "  3rd:" + scaleNotes[2] +
+            "  4th:" + scaleNotes[3] + "  5th:" + scaleNotes[4] + "  6th:" + scaleNotes[5] + "  7th:" + scaleNotes[6];
+
+        g.setColour(juce::Colours::silver);
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawFittedText(scaleText, scaleArea.reduced(5), juce::Justification::centred, 1);
     }
 
     void InspectorComponent::mouseDown(const juce::MouseEvent& e) {

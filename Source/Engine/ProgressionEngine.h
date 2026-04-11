@@ -25,6 +25,15 @@ namespace ChordMatrix
         juce::String previewText;
     };
 
+    // ★新規追加: AIコードサジェスション機能のためのデータ構造
+    struct ChordSuggestion {
+        int targetDegree;       // 提案する次コードのディグリー (0:I, 1:II ...)
+        int targetScale;        // 推奨スケール (0:Major, 1:Minor ...)
+        int relativeKeyOffset;  // 現在のキーからの相対シフト (-12 to +12)
+        float probability;      // 遷移確率の重み付け (0.0 to 1.0)
+        juce::String reasoning; // 提案の理論的根拠 (UI表示用)
+    };
+
     class ProgressionEngine
     {
     public:
@@ -56,6 +65,8 @@ namespace ChordMatrix
 
         static const std::vector<ProgressionPreset>& getProgressionDictionary();
         static juce::StringArray getModulationNames();
-        static std::vector<int> suggestNextChords(int currentDegree, int scaleType);
+
+        // ★修正: マルコフ連鎖に基づく構造的なサジェスト予測API
+        static std::vector<ChordSuggestion> suggestNextChords(int currentDegree, int scaleType);
     };
 }

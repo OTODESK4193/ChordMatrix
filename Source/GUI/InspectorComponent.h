@@ -28,7 +28,7 @@ namespace ChordMatrix {
         juce::Slider stepShiftSlider;
         juce::Label stepKeyLabel{ "", "KEY" }, stepScaleLabel{ "", "SCALE" }, stepDegreeLabel{ "", "DEGREE" }, voicingLabel{ "", "VOICING" }, stepShiftLabel{ "", "SHIFT" };
 
-        juce::TextButton btnOptimize{ "OPTIMIZE" }; // ★追加: 移設されたボタン
+        juce::TextButton btnOptimize{ "OPTIMIZE" };
 
         int selectedStep = 0;
         int scopeKey = 0, scopeScale = 0, scopeDegree = 0, scopeVoicing = 0, scopeOptimize = 0, scopeShift = 0;

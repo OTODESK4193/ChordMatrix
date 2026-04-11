@@ -9,20 +9,9 @@ namespace ChordMatrix
 
     std::vector<juce::String> MusicTheory::getScaleNames() {
         return {
-            "Major (Ionian)",
-            "Natural Minor",
-            "Harmonic Minor",
-            "Melodic Minor",
-            "Dorian",
-            "Phrygian",
-            "Lydian",
-            "Mixolydian",
-            "Locrian",
-            "Harmonic Major",
-            "Altered",
-            "Lydian Dominant",
-            "HW Diminished",
-            "Whole Tone"
+            "Major (Ionian)", "Natural Minor", "Harmonic Minor", "Melodic Minor",
+            "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian",
+            "Harmonic Major", "Altered", "Lydian Dominant", "HW Diminished", "Whole Tone"
         };
     }
 
@@ -38,7 +27,7 @@ namespace ChordMatrix
         case 7: return { 0, 2, 4, 5, 7, 9, 10 }; // Mixolydian
         case 8: return { 0, 1, 3, 5, 6, 8, 10 }; // Locrian
         case 9: return { 0, 2, 4, 5, 7, 8, 11 }; // Harmonic Major
-        case 10: return { 0, 1, 3, 4, 6, 8, 10 }; // Altered (Super Locrian)
+        case 10: return { 0, 1, 3, 4, 6, 8, 10 }; // Altered
         case 11: return { 0, 2, 4, 6, 7, 9, 10 }; // Lydian Dominant
         case 12: return { 0, 1, 3, 4, 6, 7, 9 };  // HW Diminished
         case 13: return { 0, 2, 4, 6, 8, 10, 12 }; // Whole Tone
@@ -52,21 +41,32 @@ namespace ChordMatrix
 
     int MusicTheory::getBasePitch(const StepData& step, int voiceIdx) {
         auto intervals = getScaleIntervals(step.scaleType);
-        int rootPitch = 60 + step.keyRoot; // C4 Base
+        int rootPitch = 60 + step.keyRoot;
 
         int offsetDegrees = 0;
         if (voiceIdx == 0) offsetDegrees = 0;
-        else if (voiceIdx == 1) offsetDegrees = 2;  // 3rd
-        else if (voiceIdx == 2) offsetDegrees = 4;  // 5th
-        else if (voiceIdx == 3) offsetDegrees = 6;  // 7th
-        else if (voiceIdx == 4) offsetDegrees = 8;  // 9th
-        else if (voiceIdx == 5) offsetDegrees = 10; // 11th
-        else if (voiceIdx == 6) offsetDegrees = 12; // 13th
+        else if (voiceIdx == 1) offsetDegrees = 2;
+        else if (voiceIdx == 2) offsetDegrees = 4;
+        else if (voiceIdx == 3) offsetDegrees = 6;
+        else if (voiceIdx == 4) offsetDegrees = 8;
+        else if (voiceIdx == 5) offsetDegrees = 10;
+        else if (voiceIdx == 6) offsetDegrees = 12;
 
         int totalDegrees = step.chordDegree + offsetDegrees;
         int octaves = totalDegrees / 7;
         int scaleDegree = totalDegrees % 7;
 
         return rootPitch + intervals[scaleDegree] + (octaves * 12);
+    }
+
+    // ★新規追加: UI描画用に現在のKey/Scaleの構成音を取得
+    std::array<juce::String, 7> MusicTheory::getScaleNoteNames(int keyRoot, int scaleType) {
+        std::array<juce::String, 7> names;
+        auto intervals = getScaleIntervals(scaleType);
+        for (int i = 0; i < 7; ++i) {
+            int pc = (keyRoot + intervals[i]) % 12;
+            names[i] = getNoteName(pc);
+        }
+        return names;
     }
 }

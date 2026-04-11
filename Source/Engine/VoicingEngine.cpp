@@ -17,12 +17,12 @@ namespace ChordMatrix
 
         if (step.voicingMode == 6 || step.voicingMode == 7 || (step.voicingMode >= 16 && step.voicingMode <= 19)) {
             int ustRootOffset = 0;
-            if (step.voicingMode == 6) ustRootOffset = 1;       // UST bII
-            else if (step.voicingMode == 7) ustRootOffset = 8;  // UST bVI
-            else if (step.voicingMode == 16) ustRootOffset = 3; // UST bIII
-            else if (step.voicingMode == 17) ustRootOffset = 6; // UST bV
-            else if (step.voicingMode == 18) ustRootOffset = 9; // UST VI
-            else if (step.voicingMode == 19) ustRootOffset = 2; // UST II
+            if (step.voicingMode == 6) ustRootOffset = 1;
+            else if (step.voicingMode == 7) ustRootOffset = 8;
+            else if (step.voicingMode == 16) ustRootOffset = 3;
+            else if (step.voicingMode == 17) ustRootOffset = 6;
+            else if (step.voicingMode == 18) ustRootOffset = 9;
+            else if (step.voicingMode == 19) ustRootOffset = 2;
 
             int ustBase = rootPitch + 12 + ustRootOffset;
 
@@ -172,20 +172,14 @@ namespace ChordMatrix
         int count = 0;
         for (int v = 0; v < NumVoices; ++v) {
             if (step.voices[v].isActive) {
-                pitches[count++] = { MusicTheory::getBasePitch(step, v) +
-                                     step.voices[v].accidental +
-                                     (step.voices[v].octaveShift * 12) +
-                                     step.shift, v };
+                pitches[count++] = { MusicTheory::getBasePitch(step, v) + step.voices[v].accidental + (step.voices[v].octaveShift * 12) + step.shift, v };
             }
         }
         if (count == 0) return 60;
 
         std::sort(pitches.begin(), pitches.begin() + count, [](auto& a, auto& b) { return a.first < b.first; });
-
         int inv = step.inversion % count;
-        for (int i = 0; i < inv; ++i) {
-            pitches[i].first += 12;
-        }
+        for (int i = 0; i < inv; ++i) pitches[i].first += 12;
         std::sort(pitches.begin(), pitches.begin() + count, [](auto& a, auto& b) { return a.first < b.first; });
 
         if (step.voicingMode == 1 && count >= 4) pitches[count - 2].first -= 12;
@@ -408,30 +402,32 @@ namespace ChordMatrix
                     int testPitch = basePitch + oct * 12;
                     float cost = 0.0f;
 
+                    // L1ノルム (Taxicab metric)
                     int minDist = 9999;
                     for (int pPitch : prevPitches) {
                         int dist = std::abs(pPitch - testPitch);
                         if (dist < minDist) minDist = dist;
                     }
-
                     cost += static_cast<float>(minDist);
+
+                    // L∞ノルム (Chebyshev metric) : 一定以上の跳躍は極端なペナルティ
+                    if (minDist > 4) {
+                        cost += static_cast<float>(minDist - 4) * 2.5f;
+                    }
 
                     if (minDist == 0) cost -= 3.0f;
                     else if (minDist == 1) cost -= 1.5f;
                     else if (minDist == 2) cost -= 0.5f;
 
-                    // クリシェマスキング（3度の保持）
                     if (isBassCliche && v == 1 && minDist > 0) {
                         cost += 100.0f;
                     }
 
                     if (v == 0) cost -= static_cast<float>(minDist) * 0.5f;
-                    else if (minDist > 4) cost += static_cast<float>(minDist - 4) * 2.0f;
 
+                    // 平行5度・平行8度禁止
                     for (int v_prev = 0; v_prev < v; ++v_prev) {
-                        if (seq[targetStep].voices[v_prev].isActive &&
-                            seq[prevActiveStep].voices[v_prev].isActive &&
-                            seq[prevActiveStep].voices[v].isActive)
+                        if (seq[targetStep].voices[v_prev].isActive && seq[prevActiveStep].voices[v_prev].isActive && seq[prevActiveStep].voices[v].isActive)
                         {
                             int currP1 = MusicTheory::getBasePitch(seq[targetStep], v_prev) + seq[targetStep].voices[v_prev].accidental + (seq[targetStep].voices[v_prev].octaveShift * 12) + seq[targetStep].shift;
                             int currP2 = testPitch;
@@ -448,8 +444,7 @@ namespace ChordMatrix
                         }
                     }
 
-                    bool isDominantResolution = (seq[prevActiveStep].chordDegree == 4 &&
-                        (seq[targetStep].chordDegree == 0 || seq[targetStep].chordDegree == 5));
+                    bool isDominantResolution = (seq[prevActiveStep].chordDegree == 4 && (seq[targetStep].chordDegree == 0 || seq[targetStep].chordDegree == 5));
                     if (isDominantResolution) {
                         int pP2 = MusicTheory::getBasePitch(seq[prevActiveStep], v) + seq[prevActiveStep].voices[v].accidental + (seq[prevActiveStep].voices[v].octaveShift * 12) + seq[prevActiveStep].shift;
                         int leadingToneClass = (((seq[prevActiveStep].keyRoot + seq[prevActiveStep].shift) % 12) + 11) % 12;
@@ -460,7 +455,13 @@ namespace ChordMatrix
                         }
                     }
 
-                    if (testPitch < 36) cost += static_cast<float>(36 - testPitch) * 2.0f;
+                    // Low Interval Limit (濁り防止)
+                    if (v == 0) {
+                        if (testPitch < 36) cost += static_cast<float>(36 - testPitch) * 2.0f;
+                    }
+                    else {
+                        if (testPitch < 48) cost += static_cast<float>(48 - testPitch) * 5.0f;
+                    }
                     if (testPitch > 84) cost += static_cast<float>(testPitch - 84) * 2.0f;
 
                     if (cost < lowestCost) {

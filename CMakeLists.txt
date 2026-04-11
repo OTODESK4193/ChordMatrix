@@ -69,7 +69,7 @@ target_sources(ChordMatrix PRIVATE
     Source/GUI/InspectorComponent.h
     Source/GUI/MatrixGridComponent.cpp
     Source/GUI/MatrixGridComponent.h
- "Source/Engine/ProgressionEngine.h" "Source/Engine/ProgressionEngine.cpp")
+ "Source/Engine/ProgressionEngine.h" "Source/Engine/ProgressionEngine.cpp" "Source/GUI/ProgressionBrowserComponent.h" "Source/GUI/ProgressionBrowserComponent.cpp" "Source/GUI/SuggestionPanelComponent.h" "Source/GUI/SuggestionPanelComponent.cpp")
 
 # =========================================================================
 # 5. インクルードパスの設定
