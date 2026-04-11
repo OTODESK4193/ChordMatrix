@@ -16,36 +16,20 @@ namespace ChordMatrix {
             lbl.setJustificationType(juce::Justification::centred);
             };
 
-        auto applyScope = [this](int scopeType, auto setterFunction) {
-            if (selectedStep < 0) return;
-            int spb = getStepsPerBar();
-            if (scopeType == 0) {
-                setterFunction(selectedStep);
-            }
-            else if (scopeType == 1) {
-                int barStart = (selectedStep / spb) * spb;
-                for (int i = 0; i < spb; ++i) setterFunction(barStart + i);
-            }
-            else {
-                for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i);
-            }
-            if (onSettingsChanged) onSettingsChanged();
-            repaint();
-            };
-
+        // ★修正: メンバ関数化されたapplyScopeを利用して安全にバインディング
         setupCombo(stepKeyMenu, stepKeyLabel);
         for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(MusicTheory::getNoteName(i), i + 1);
-        stepKeyMenu.onChange = [this, applyScope] { applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; }); };
+        stepKeyMenu.onChange = [this] { applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; }); };
 
         setupCombo(stepScaleMenu, stepScaleLabel);
         auto scales = MusicTheory::getScaleNames();
         for (int i = 0; i < scales.size(); ++i) stepScaleMenu.addItem(scales[i], i + 1);
-        stepScaleMenu.onChange = [this, applyScope] { applyScope(scopeScale, [this](int s) { audioProcessor.sequenceData[s].scaleType = stepScaleMenu.getSelectedId() - 1; }); };
+        stepScaleMenu.onChange = [this] { applyScope(scopeScale, [this](int s) { audioProcessor.sequenceData[s].scaleType = stepScaleMenu.getSelectedId() - 1; }); };
 
         setupCombo(stepDegreeMenu, stepDegreeLabel);
         auto degs = MusicTheory::getDegreeNames();
         for (int i = 0; i < degs.size(); ++i) stepDegreeMenu.addItem(degs[i], i + 1);
-        stepDegreeMenu.onChange = [this, applyScope] { applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; }); };
+        stepDegreeMenu.onChange = [this] { applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; }); };
 
         setupCombo(voicingMenu, voicingLabel);
         voicingMenu.addItem("Close", 1);
@@ -56,7 +40,7 @@ namespace ChordMatrix {
         voicingMenu.addItem("Rootless B", 6);
         voicingMenu.addItem("UST (bII)", 7);
         voicingMenu.addItem("UST (bVI)", 8);
-        voicingMenu.onChange = [this, applyScope] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
+        voicingMenu.onChange = [this] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
 
         addAndMakeVisible(stepShiftSlider); addAndMakeVisible(stepShiftLabel);
         stepShiftSlider.setSliderStyle(juce::Slider::IncDecButtons);
@@ -68,12 +52,37 @@ namespace ChordMatrix {
         stepShiftLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
         stepShiftLabel.attachToComponent(&stepShiftSlider, true);
         stepShiftLabel.setJustificationType(juce::Justification::centred);
-        stepShiftSlider.onValueChange = [this, applyScope] { applyScope(scopeShift, [this](int s) { audioProcessor.sequenceData[s].shift = (int)stepShiftSlider.getValue(); }); };
+        stepShiftSlider.onValueChange = [this] { applyScope(scopeShift, [this](int s) { audioProcessor.sequenceData[s].shift = (int)stepShiftSlider.getValue(); }); };
 
         updateInspector();
     }
 
     InspectorComponent::~InspectorComponent() {}
+
+    // ★修正: ローカルなラムダ式を廃止し、安全なメンバ関数として再定義
+    void InspectorComponent::applyScope(int scopeType, std::function<void(int)> setterFunction) {
+        if (selectedStep < 0) return;
+        int spb = getStepsPerBar();
+
+        if (scopeType == 0) { // STEP
+            setterFunction(selectedStep);
+        }
+        else if (scopeType == 1) { // BAR
+            int barStart = (selectedStep / spb) * spb;
+            for (int i = 0; i < spb; ++i) setterFunction(barStart + i);
+        }
+        else { // ALL
+            for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i);
+        }
+
+        // プレビューデータ（再生バッファ）にも即座に同期させ、音とUIの齟齬を防ぐ
+        for (int i = 0; i < ChordMatrix::TotalSteps; ++i) {
+            audioProcessor.previewSequenceData[i] = audioProcessor.sequenceData[i];
+        }
+
+        if (onSettingsChanged) onSettingsChanged();
+        repaint();
+    }
 
     void InspectorComponent::setSelectedStep(int stepIndex) {
         selectedStep = stepIndex;
@@ -96,7 +105,7 @@ namespace ChordMatrix {
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
         float ppqPerStep = getPpqPerStep();
-        return juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep) < 1 ? 1 : juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep);
+        return std::max(1, juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep));
     }
 
     float InspectorComponent::getPpqPerStep() const {
@@ -104,16 +113,24 @@ namespace ChordMatrix {
         return (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
     }
 
+    // ★修正: 最新の MatrixGridComponent と完全に同期した判定ロジック
     int InspectorComponent::getEffectiveStep(int targetS) const {
         int eff = targetS;
         float ppq = getPpqPerStep();
         for (int prevS = targetS; prevS >= 0; --prevS) {
             float dist = static_cast<float>(targetS - prevS) * ppq;
             bool covers = false;
-            for (int v = 0; v < 7; ++v) {
-                const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
-                if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) {
-                    covers = true; break;
+            const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
+
+            // パターンB（Rootless/USTなど）の判定もインスペクター側で正しく認識させる
+            if (sData.voicingMode >= 4 && sData.gateLength > dist + 0.001f) {
+                covers = true;
+            }
+            else {
+                for (int v = 0; v < 7; ++v) {
+                    if (sData.voices[v].isActive && sData.gateLength > dist + 0.001f) {
+                        covers = true; break;
+                    }
                 }
             }
             if (covers) { eff = prevS; break; }
@@ -144,9 +161,9 @@ namespace ChordMatrix {
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
 
         if (selectedStep >= 0) {
-            // ★修正: 未初期化エラーを防ぐためゼロで初期化
             std::array<int, 7> vps = { 0 };
-            int count = VoicingEngine::getVoicedPitches(activeSeqData[getEffectiveStep(selectedStep)], vps);
+            int effStep = getEffectiveStep(selectedStep);
+            int count = VoicingEngine::getVoicedPitches(activeSeqData[effStep], vps);
             juce::String noteStr = "";
             for (int i = 0; i < count; ++i) {
                 if (i > 0) noteStr << ", ";
@@ -194,7 +211,6 @@ namespace ChordMatrix {
             g.setColour(juce::Colour(0xffffa500));
             g.setFont(juce::Font(46.0f, juce::Font::bold));
 
-            // ★修正: オーバーフロー警告を防止するため、int*intの割り算ではなく安全なfloat計算に
             int topHeight = static_cast<int>(static_cast<float>(textArea.getHeight()) * 0.6f);
             g.drawFittedText(relName, textArea.removeFromTop(topHeight), juce::Justification::centredBottom, 1, 0.2f);
 

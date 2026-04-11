@@ -293,61 +293,64 @@ namespace ChordMatrix {
         for (int s = 0; s < stepsPerBar; ++s) {
             int actS = (editBar * stepsPerBar) + s;
             auto& effStep = activeSeqData[actS];
-            std::array<int, 7> vps = { 0 };
-            int count = VoicingEngine::getVoicedPitches(effStep, vps);
             float safeGate = juce::jlimit(ppqPerStep, 16.0f, effStep.gateLength);
 
-            if (count > 0) {
-                if (effStep.voicingMode >= 4) {
-                    // パターンB (音名表記)
-                    for (int i = 0; i < count; ++i) {
-                        int v = 6 - i;
+            if (effStep.voicingMode >= 4) {
+                // パターンB (音名表記)
+                int maxV = (effStep.voicingMode >= 6) ? 6 : 4;
+                std::array<int, 7> tempPitches = { 0 };
+                VoicingEngine::getPatternBPitches(effStep, tempPitches);
+
+                for (int i = 0; i < maxV; ++i) {
+                    int v = 6 - i;
+                    auto cell = getCellBounds(s, v, stepW);
+                    cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
+
+                    if (effStep.voices[i].octaveShift == -128) {
+                        // ミュート状態のセルを描画
+                        g.setColour(activeColor.withAlpha(0.2f));
+                        g.drawRect(cell.reduced(1.0f, 1.0f), 1.0f);
+                    }
+                    else {
+                        g.setColour(activeColor); g.fillRect(cell.reduced(1.0f, 1.0f));
+                        if (audioProcessor.isPlaying && globalStep >= 0 && actS == (globalStep % totalStepsInLoop)) {
+                            g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
+                        }
+                        int p = tempPitches[i];
+                        juce::String noteName = MusicTheory::getNoteName(p) + juce::String((p / 12) - 1);
+                        g.setColour(bg); g.setFont(juce::Font(14.0f, juce::Font::bold));
+                        g.drawFittedText(noteName, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.1f);
+                    }
+                }
+            }
+            else {
+                // パターンA (度数表記 + Drop/SpreadのUI反映)
+                for (int v = 0; v < 7; ++v) {
+                    int voiceIdx = 6 - v;
+                    auto& voice = effStep.voices[voiceIdx];
+
+                    if (voice.isActive) {
                         auto cell = getCellBounds(s, v, stepW);
                         cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
                         g.setColour(activeColor); g.fillRect(cell.reduced(1.0f, 1.0f));
                         if (audioProcessor.isPlaying && globalStep >= 0 && actS == (globalStep % totalStepsInLoop)) {
                             g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
                         }
-                        int p = vps[i];
-                        juce::String noteName = MusicTheory::getNoteName(p) + juce::String((p / 12) - 1);
-                        g.setColour(bg); g.setFont(juce::Font(14.0f, juce::Font::bold));
-                        g.drawFittedText(noteName, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.1f);
-                    }
-                }
-                else {
-                    // パターンA (度数表記 + DropロジックUI反映)
-                    int activeTotal = 0;
-                    for (int v = 0; v < 7; ++v) if (effStep.voices[6 - v].isActive) activeTotal++;
 
-                    int activeIdx = 0;
-                    for (int v = 0; v < 7; ++v) {
-                        int voiceIdx = 6 - v;
-                        auto& voice = effStep.voices[voiceIdx];
+                        // エンジン内部での最終ピッチを逆算し、表示するオクターブシフトを決定
+                        int finalPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
+                        int basePitch = MusicTheory::getBasePitch(effStep, voiceIdx) + voice.accidental + (voice.octaveShift * 12) + effStep.shift;
+                        int engineOctaveShift = (finalPitch - basePitch) / 12;
+                        int totalOct = voice.octaveShift + engineOctaveShift;
 
-                        if (voice.isActive) {
-                            auto cell = getCellBounds(s, v, stepW);
-                            cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
-                            g.setColour(activeColor); g.fillRect(cell.reduced(1.0f, 1.0f));
-                            if (audioProcessor.isPlaying && globalStep >= 0 && actS == (globalStep % totalStepsInLoop)) {
-                                g.setColour(textLight); g.drawRect(cell.reduced(1.0f, 1.0f), 2.0f);
-                            }
+                        juce::String label;
+                        if (totalOct != 0) label << (totalOct > 0 ? "+" : "") << totalOct;
+                        if (voice.accidental > 0) { for (int i = 0; i < voice.accidental; ++i) { if (label.isNotEmpty()) label << " "; label << "#"; } }
+                        else if (voice.accidental < 0) { for (int i = 0; i < std::abs(voice.accidental); ++i) { if (label.isNotEmpty()) label << " "; label << "b"; } }
 
-                            // ★追加: Drop 2 / Drop 3 のUIオクターブ合算表記
-                            int dropShift = 0;
-                            if (effStep.voicingMode == 1 && activeTotal >= 4 && activeIdx == 1) dropShift = -1;
-                            if (effStep.voicingMode == 2 && activeTotal >= 4 && activeIdx == 2) dropShift = -1;
-
-                            int totalOct = voice.octaveShift + dropShift;
-                            juce::String label;
-                            if (totalOct != 0) label << (totalOct > 0 ? "+" : "") << totalOct;
-                            if (voice.accidental > 0) { for (int i = 0; i < voice.accidental; ++i) { if (label.isNotEmpty()) label << " "; label << "#"; } }
-                            else if (voice.accidental < 0) { for (int i = 0; i < std::abs(voice.accidental); ++i) { if (label.isNotEmpty()) label << " "; label << "b"; } }
-
-                            if (label.isNotEmpty()) {
-                                g.setColour(bg); g.setFont(juce::Font(14.0f, juce::Font::bold));
-                                g.drawFittedText(label, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.1f);
-                            }
-                            activeIdx++;
+                        if (label.isNotEmpty()) {
+                            g.setColour(bg); g.setFont(juce::Font(14.0f, juce::Font::bold));
+                            g.drawFittedText(label, cell.reduced(2.0f).toNearestInt(), juce::Justification::centred, 1, 0.1f);
                         }
                     }
                 }
@@ -458,6 +461,7 @@ namespace ChordMatrix {
         float localX = static_cast<float>(e.x) - leftMargin;
         if (localX < 0) return;
 
+        // インバージョンエリア
         if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
             int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
@@ -484,6 +488,7 @@ namespace ChordMatrix {
             return;
         }
 
+        // DELエリア
         if (e.y >= 155.0f + 7.0f * cellHeight && e.y < 155.0f + 7.0f * cellHeight + 30.0f) {
             if (isLeftClick) {
                 int localStep = static_cast<int>(localX / stepW);
@@ -508,6 +513,7 @@ namespace ChordMatrix {
             return;
         }
 
+        // ヘッダーエリア
         if (e.y >= 155.0f - headerHeight - 35.0f && e.y < 155.0f - 35.0f) {
             int localStep = static_cast<int>(localX / stepW);
             if (localStep < stepsPerBar) {
@@ -525,6 +531,7 @@ namespace ChordMatrix {
             return;
         }
 
+        // メイングリッドエリア
         if (e.y >= 155.0f && e.y < 155.0f + 7.0f * cellHeight) {
             for (int s = 0; s < stepsPerBar; ++s) {
                 int actS = (editBar * stepsPerBar) + s;
@@ -538,18 +545,46 @@ namespace ChordMatrix {
                     int voiceIdx = 6 - v;
                     auto cell = getCellBounds(s, v, stepW);
 
-                    bool isCellActive = (effStep.voicingMode >= 4) ? (voiceIdx < count) : effStep.voices[voiceIdx].isActive;
-                    if (isCellActive) cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
+                    bool isCellActive = false;
+                    int maxVForB = (effStep.voicingMode >= 6) ? 6 : 4;
 
-                    if (cell.contains(e.position)) {
-                        if (isCellActive) {
+                    if (effStep.voicingMode >= 4) isCellActive = (voiceIdx < maxVForB && effStep.voices[voiceIdx].octaveShift != -128);
+                    else isCellActive = effStep.voices[voiceIdx].isActive;
+
+                    if (isCellActive) {
+                        cell.setWidth(cell.getWidth() * (safeGate / ppqPerStep));
+
+                        if (cell.contains(e.position)) {
+                            // セルに対する右クリック（削除/ミュート処理）
                             if (isRightClick) {
-                                if (effStep.voicingMode >= 4) effStep.voices[voiceIdx].accidental = 0;
+                                if (effStep.voicingMode >= 4) {
+                                    effStep.voices[voiceIdx].octaveShift = -128; // パターンBのミュート
+                                    effStep.voices[voiceIdx].accidental = 0;
+                                }
                                 else {
-                                    effStep.voices[voiceIdx].isActive = false;
+                                    effStep.voices[voiceIdx].isActive = false; // パターンAの削除
                                     effStep.voices[voiceIdx].octaveShift = 0;
                                     effStep.voices[voiceIdx].accidental = 0;
                                 }
+
+                                // すべての音がミュート/削除されたら初期化する
+                                bool anyActive = false;
+                                if (effStep.voicingMode >= 4) {
+                                    for (int i = 0; i < maxVForB; ++i) if (effStep.voices[i].octaveShift != -128) anyActive = true;
+                                }
+                                else {
+                                    for (int i = 0; i < 7; ++i) if (effStep.voices[i].isActive) anyActive = true;
+                                }
+
+                                if (!anyActive) {
+                                    effStep.voicingMode = 0;
+                                    effStep.inversion = 0;
+                                    effStep.shift = 0;
+                                    effStep.keyRoot = 0;
+                                    effStep.scaleType = 0;
+                                    effStep.chordDegree = 0;
+                                }
+
                                 selectedStep = actS;
                                 if (onStepSelected) onStepSelected(selectedStep);
                                 return;
@@ -563,18 +598,11 @@ namespace ChordMatrix {
                                 else {
                                     isDraggingChord = true; dragStep = actS; dragStartX = static_cast<float>(e.position.x); selectedStep = actS;
 
-                                    // ★修正: クリックしたセルの音高を特定してプレビューする
-                                    int targetPitch = 60;
-                                    if (effStep.voicingMode >= 4 && voiceIdx < count) {
-                                        targetPitch = vps[voiceIdx];
-                                    }
-                                    else {
-                                        targetPitch = MusicTheory::getBasePitch(effStep, voiceIdx) + effStep.voices[voiceIdx].accidental + (effStep.voices[voiceIdx].octaveShift * 12);
-                                    }
-
+                                    // プレビューの精密な発音（DropやInversionなどを逆算）
+                                    int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
                                     audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
 
-                                    // ★追加: Spread時のRootセルクリックによるデュアル発音 (左手ベース対応)
+                                    // Spreadモード時のルート音のデュアルプレビュー
                                     bool isLowestActive = true;
                                     for (int iv = voiceIdx - 1; iv >= 0; --iv) {
                                         if (effStep.voices[iv].isActive) { isLowestActive = false; break; }
@@ -594,7 +622,22 @@ namespace ChordMatrix {
                                 }
                             }
                         }
+                    }
+                    else if (cell.contains(e.position) && isLeftClick) {
+                        // アクティブでないセルの左クリック（新規ノートまたはミュート復帰）
+                        if (effStep.voicingMode >= 4 && voiceIdx < maxVForB) {
+                            // パターンBのミュート復帰
+                            effStep.voices[voiceIdx].octaveShift = 0;
+                            selectedStep = actS;
+                            int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
+                            audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
+                            for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
+                            audioProcessor.triggerPreview.store(true);
+                            if (onStepSelected) onStepSelected(selectedStep);
+                            return;
+                        }
                         else if (effStep.voicingMode < 4) {
+                            // パターンAの新規ノート追加
                             bool isCovered = false;
                             for (int prevS = actS - 1; prevS >= 0; --prevS) {
                                 float dist = static_cast<float>(actS - prevS) * ppqPerStep;
@@ -602,15 +645,13 @@ namespace ChordMatrix {
                                     isCovered = true; break;
                                 }
                             }
-                            if (isLeftClick && !isCovered) {
+                            if (!isCovered) {
                                 effStep.voices[voiceIdx].isActive = true;
                                 selectedStep = actS;
-
-                                int pitch = MusicTheory::getBasePitch(effStep, voiceIdx) + effStep.voices[voiceIdx].accidental + (effStep.voices[voiceIdx].octaveShift * 12);
-                                audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, pitch));
+                                int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
+                                audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
                                 for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
                                 audioProcessor.triggerPreview.store(true);
-
                                 if (onStepSelected) onStepSelected(selectedStep);
                                 return;
                             }
@@ -645,7 +686,7 @@ namespace ChordMatrix {
 
                 for (int v = 0; v < 7; ++v) {
                     int voiceIdx = 6 - v;
-                    bool isCellActive = (effStep.voicingMode >= 4) ? (voiceIdx < count) : effStep.voices[voiceIdx].isActive;
+                    bool isCellActive = (effStep.voicingMode >= 4) ? (voiceIdx < ((effStep.voicingMode >= 6) ? 6 : 4) && effStep.voices[voiceIdx].octaveShift != -128) : effStep.voices[voiceIdx].isActive;
 
                     if (isCellActive) {
                         auto cell = getCellBounds(s, v, stepW);
@@ -756,22 +797,19 @@ namespace ChordMatrix {
                 int actS = (editBar * stepsPerBar) + s;
                 auto& effStep = audioProcessor.sequenceData[actS];
 
-                std::array<int, 7> vps = { 0 };
-                int count = VoicingEngine::getVoicedPitches(effStep, vps);
+                int maxV = (effStep.voicingMode >= 6) ? 6 : 4;
 
                 for (int v = 0; v < 7; ++v) {
                     int voiceIdx = 6 - v;
-                    bool isCellActive = (effStep.voicingMode >= 4) ? (voiceIdx < count) : effStep.voices[voiceIdx].isActive;
+                    bool isCellActive = (effStep.voicingMode >= 4) ? (voiceIdx < maxV && effStep.voices[voiceIdx].octaveShift != -128) : effStep.voices[voiceIdx].isActive;
 
                     if (getCellBounds(s, v, stepW).contains(e.position) && isCellActive) {
                         auto& voice = effStep.voices[voiceIdx];
 
                         if (effStep.voicingMode >= 4) {
-                            // ★追加: パターンB - 半音直接操作（オクターブ操作なし）
                             voice.accidental = juce::jlimit<int8_t>(-24, 24, voice.accidental + (wheel.deltaY > 0 ? 1 : -1));
                         }
                         else {
-                            // ★追加: パターンA - Rootのみ臨時記号ロック
                             if (e.mods.isCtrlDown() || e.mods.isCommandDown()) {
                                 if (voiceIdx != 0) voice.accidental = juce::jlimit<int8_t>(-2, 2, voice.accidental + (wheel.deltaY > 0 ? 1 : -1));
                             }
@@ -782,17 +820,7 @@ namespace ChordMatrix {
 
                         selectedStep = actS;
 
-                        std::array<int, 7> previewVps = { 0 };
-                        int newCount = VoicingEngine::getVoicedPitches(effStep, previewVps);
-
-                        int previewPitch = 60;
-                        if (effStep.voicingMode >= 4 && voiceIdx < newCount) {
-                            previewPitch = previewVps[voiceIdx];
-                        }
-                        else {
-                            previewPitch = MusicTheory::getBasePitch(effStep, voiceIdx) + voice.accidental + (voice.octaveShift * 12);
-                        }
-
+                        int previewPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
                         audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, previewPitch));
 
                         bool isLowestActive = true;

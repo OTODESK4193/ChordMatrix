@@ -224,9 +224,9 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 }
 
                 float chordDurationSec = static_cast<float>(sData.gateLength) * (60.0f / currentBPM);
-                float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.85f);
+                float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.95f);
 
-                juce::ADSR::Parameters mainParams{ 0.01f, activeDecay, 0.0f, 0.01f };
+                juce::ADSR::Parameters mainParams{ 0.01f, activeDecay, 0.3f, 0.1f };
 
                 for (int i = 0; i < count; ++i)
                 {

@@ -4,46 +4,27 @@
 
 namespace ChordMatrix
 {
-    int VoicingEngine::getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches) {
+    int VoicingEngine::getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches) {
         int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
 
-        // =========================================================
-        // 1. アッパー・ストラクチャー・トライアド (UST)
-        // パターンB: 自動計算 + ユーザーの半音微調整(accidental)
-        // =========================================================
         if (step.voicingMode == 6 || step.voicingMode == 7) {
             int ustRootOffset = (step.voicingMode == 6) ? 1 : 8;
-
+            int ustBase = rootPitch + 12 + ustRootOffset;
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 4 + step.voices[1].accidental;
             outPitches[2] = rootPitch + 10 + step.voices[2].accidental;
-
-            int ustBase = rootPitch + 12 + ustRootOffset;
-
             outPitches[3] = ustBase + step.voices[3].accidental;
             outPitches[4] = ustBase + 4 + step.voices[4].accidental;
             outPitches[5] = ustBase + 7 + step.voices[5].accidental;
-
             return 6;
         }
-
-        // =========================================================
-        // 2. ルートレス・ボイシング (ビル・エヴァンス スタイル)
-        // パターンB: 自動計算 + ユーザーの半音微調整(accidental)
-        // =========================================================
-        if (step.voicingMode == 4 || step.voicingMode == 5) {
+        else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
             int typeA[4] = { r, r, r, r };
 
-            if (step.chordDegree == 1) {
-                typeA[0] = r + 3; typeA[1] = r + 7; typeA[2] = r + 10; typeA[3] = r + 14;
-            }
-            else if (step.chordDegree == 4) {
-                typeA[0] = r + 4; typeA[1] = r + 9; typeA[2] = r + 10; typeA[3] = r + 14;
-            }
-            else {
-                typeA[0] = r + 4; typeA[1] = r + 7; typeA[2] = r + 11; typeA[3] = r + 14;
-            }
+            if (step.chordDegree == 1) { typeA[0] = r + 3; typeA[1] = r + 7; typeA[2] = r + 10; typeA[3] = r + 14; }
+            else if (step.chordDegree == 4) { typeA[0] = r + 4; typeA[1] = r + 9; typeA[2] = r + 10; typeA[3] = r + 14; }
+            else { typeA[0] = r + 4; typeA[1] = r + 7; typeA[2] = r + 11; typeA[3] = r + 14; }
 
             if (step.voicingMode == 4) {
                 for (int i = 0; i < 4; ++i) outPitches[i] = typeA[i] + step.voices[i].accidental;
@@ -56,10 +37,26 @@ namespace ChordMatrix
             }
             return 4;
         }
+        return 0;
+    }
+
+    int VoicingEngine::getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches) {
+        // =========================================================
+        // パターンB: 自動生成 + ミュート除外
+        // =========================================================
+        if (step.voicingMode >= 4) {
+            std::array<int, 7> temp = { 0 };
+            int maxV = getPatternBPitches(step, temp);
+            int count = 0;
+            for (int i = 0; i < maxV; ++i) {
+                // -128はミュートフラグとして扱う
+                if (step.voices[i].octaveShift != -128) outPitches[count++] = temp[i];
+            }
+            return count;
+        }
 
         // =========================================================
-        // 3. 通常のボイシング処理 (Close, Drop, Spread)
-        // パターンA (度数ロジック)
+        // パターンA: 通常ボイシング (Close, Drop, Spread)
         // =========================================================
         int count = 0;
         for (int v = 0; v < NumVoices; ++v) {
@@ -84,17 +81,47 @@ namespace ChordMatrix
             std::sort(outPitches.begin(), outPitches.begin() + count);
         }
         else if (step.voicingMode == 3 && count >= 1) {
-            // ★修正: Spread - Rootの1オクターブ下を追加し、構成音を広げる
             int lowest = outPitches[0];
-            for (int i = count; i > 0; --i) outPitches[i] = outPitches[i - 1]; // 1つ後ろへシフト
+            for (int i = count; i > 0; --i) outPitches[i] = outPitches[i - 1];
             outPitches[0] = lowest - 12; // 左手ベース
             count++;
-
-            if (count > 3) outPitches[2] += 12; // 空間を広げる
+            if (count > 3) outPitches[2] += 12; // 元の1stをさらにオクターブ上げて空間を広げる
             std::sort(outPitches.begin(), outPitches.begin() + count);
         }
 
         return count;
+    }
+
+    int VoicingEngine::getPitchForVoice(const StepData& step, int voiceIdx) {
+        if (step.voicingMode >= 4) {
+            std::array<int, 7> temp = { 0 };
+            getPatternBPitches(step, temp);
+            return temp[voiceIdx];
+        }
+
+        std::array<std::pair<int, int>, 7> pitches;
+        int count = 0;
+        for (int v = 0; v < NumVoices; ++v) {
+            if (step.voices[v].isActive) {
+                pitches[count++] = { MusicTheory::getBasePitch(step, v) + step.voices[v].accidental + (step.voices[v].octaveShift * 12) + step.shift, v };
+            }
+        }
+        if (count == 0) return 60;
+
+        std::sort(pitches.begin(), pitches.begin() + count, [](auto& a, auto& b) { return a.first < b.first; });
+
+        int inv = step.inversion % count;
+        for (int i = 0; i < inv; ++i) pitches[i].first += 12;
+        std::sort(pitches.begin(), pitches.begin() + count, [](auto& a, auto& b) { return a.first < b.first; });
+
+        if (step.voicingMode == 1 && count >= 4) pitches[count - 2].first -= 12;
+        else if (step.voicingMode == 2 && count >= 4) pitches[count - 3].first -= 12;
+        else if (step.voicingMode == 3 && count >= 3) pitches[1].first += 12; // Spreadのシフト対象(インサート前のインデックス1)
+
+        for (int i = 0; i < count; ++i) {
+            if (pitches[i].second == voiceIdx) return pitches[i].first;
+        }
+        return 60;
     }
 
     juce::String VoicingEngine::getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep) {
@@ -121,24 +148,23 @@ namespace ChordMatrix
         if (!anyActive) return juce::String("-");
 
         const auto& step = seq[effS];
-        int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
-        int absRoot = rootPitch % 12;
-        if (absRoot < 0) absRoot += 12;
+        int theoreticalRoot = (MusicTheory::getBasePitch(step, 0) + step.shift) % 12;
+        if (theoreticalRoot < 0) theoreticalRoot += 12;
 
         if (step.voicingMode >= 4 && step.voicingMode <= 7) {
-            juce::String rootName = MusicTheory::getNoteName(rootPitch);
+            juce::String rootName = MusicTheory::getNoteName(theoreticalRoot);
 
             if (step.voicingMode == 6) {
-                juce::String ustName = MusicTheory::getNoteName(rootPitch + 1);
+                juce::String ustName = MusicTheory::getNoteName(theoreticalRoot + 1);
                 return rootName + "7 (UST bII)\n" + ustName + " / " + rootName + "7";
             }
             if (step.voicingMode == 7) {
-                juce::String ustName = MusicTheory::getNoteName(rootPitch + 8);
+                juce::String ustName = MusicTheory::getNoteName(theoreticalRoot + 8);
                 return rootName + "7 (UST bVI)\n" + ustName + " / " + rootName + "7";
             }
             if (step.voicingMode == 4 || step.voicingMode == 5) {
                 bool hasChanges = false;
-                for (int i = 0; i < 4; ++i) if (step.voices[i].accidental != 0) hasChanges = true;
+                for (int i = 0; i < 4; ++i) if (step.voices[i].accidental != 0 || step.voices[i].octaveShift == -128) hasChanges = true;
 
                 juce::String type = (step.chordDegree == 1) ? "m9" : (step.chordDegree == 4) ? "13" : "Maj9";
                 juce::String modeName = (step.voicingMode == 4) ? "Type A" : "Type B";
@@ -147,18 +173,17 @@ namespace ChordMatrix
                     return rootName + type + " (Rootless)\n" + modeName;
                 }
                 else {
-                    // ★修正: B案（テンション付加）か A案（完全再計算）の推論
                     std::array<int, 7> vps = { 0 };
                     int count = getVoicedPitches(step, vps);
                     bool hasRel[12] = { false };
-                    for (int i = 0; i < count; ++i) hasRel[(vps[i] - absRoot + 120) % 12] = true;
+                    for (int i = 0; i < count; ++i) hasRel[(vps[i] - theoreticalRoot + 120) % 12] = true;
 
                     bool isMinor = hasRel[3];
                     bool isMajor = hasRel[4];
                     bool hasDom7 = hasRel[10];
                     bool hasMaj7 = hasRel[11];
 
-                    // 3rd と 7th が存在すれば Rootless の原形を留めていると判断 (B案)
+                    // 骨格が維持されていればB案（テンション追記）
                     if ((isMinor || isMajor) && (hasDom7 || hasMaj7)) {
                         juce::String ext = "";
                         if (hasRel[1] || hasRel[2]) ext += "9 ";
@@ -172,27 +197,19 @@ namespace ChordMatrix
 
                         return rootName + customType + " (Rootless)\nadd " + ext.trim();
                     }
-                    // 原形を留めていない場合は下の純粋計算ロジック(A案)へフォールスルー
+                    // 維持されていなければ下の純粋解析(A案)へフォールスルー
                 }
             }
         }
 
-        // =========================================================
-        // パターンA (純粋和音名推論ロジック)
-        // =========================================================
-        bool has[12] = { false };
-        int lowestRaw = 9999;
-
         std::array<int, 7> voicedPitches = { 0 };
         int activeCount = getVoicedPitches(step, voicedPitches);
-        for (int i = 0; i < activeCount; ++i) {
-            if (voicedPitches[i] < lowestRaw) lowestRaw = voicedPitches[i];
-            has[(voicedPitches[i] % 12 + 12) % 12] = true;
-        }
 
-        int actualAbsRoot = lowestRaw % 12;
+        bool has[12] = { false };
+        for (int i = 0; i < activeCount; ++i) has[(voicedPitches[i] % 12 + 12) % 12] = true;
+
         bool relHas[12] = { false };
-        for (int i = 0; i < 12; ++i) if (has[i]) relHas[(i - actualAbsRoot + 12) % 12] = true;
+        for (int i = 0; i < 12; ++i) if (has[i]) relHas[(i - theoreticalRoot + 12) % 12] = true;
 
         juce::String type = "??";
         if (relHas[0] && relHas[4] && relHas[7]) {
@@ -216,28 +233,34 @@ namespace ChordMatrix
         }
         if (type == "??" || type == "Custom") return type;
 
-        juce::String absName = MusicTheory::getNoteName(actualAbsRoot) + type;
+        juce::String absName = MusicTheory::getNoteName(theoreticalRoot) + type;
         int keyRoot = (step.keyRoot + step.shift) % 12;
         if (keyRoot < 0) keyRoot += 12;
 
-        int diff = (actualAbsRoot - keyRoot + 12) % 12;
+        int diff = (theoreticalRoot - keyRoot + 12) % 12;
         const char* romanNames[] = { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" };
         juce::String relName = juce::String(romanNames[diff]) + type;
 
         if (activeCount > 0) {
             int lowestVoicedAbs = voicedPitches[0] % 12;
-            if (lowestVoicedAbs != actualAbsRoot) {
+            if (lowestVoicedAbs != theoreticalRoot) {
                 juce::String slash = "on" + MusicTheory::getNoteName(lowestVoicedAbs);
                 relName += slash; absName += slash;
             }
         }
+
+        // ★追加: Drop/Spread表記の明示
+        if (step.voicingMode == 1) { relName += " (Drop 2)"; absName += " (Drop 2)"; }
+        else if (step.voicingMode == 2) { relName += " (Drop 3)"; absName += " (Drop 3)"; }
+        else if (step.voicingMode == 3) { relName += " (Spread)"; absName += " (Spread)"; }
+
         return relName + "\n(" + absName + ")";
     }
 
     void VoicingEngine::optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps) {
         int prevActiveStep = -1;
         for (int s = 0; s < totalSteps; ++s) {
-            if (seq[s].voicingMode >= 4) continue; // パターンBは最適化対象外
+            if (seq[s].voicingMode >= 4) continue;
 
             bool hasActive = false;
             for (int v = 0; v < NumVoices; ++v) {

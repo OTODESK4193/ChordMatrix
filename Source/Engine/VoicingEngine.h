@@ -11,5 +11,9 @@ namespace ChordMatrix
         static int getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches);
         static juce::String getRecognizedChordName(const std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep);
         static void optimizeVoiceLeading(std::array<StepData, TotalSteps>& seq, int totalSteps);
+
+        // ★追加: UI描画とプレビューのためのヘルパー関数
+        static int getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches);
+        static int getPitchForVoice(const StepData& step, int voiceIdx);
     };
 }

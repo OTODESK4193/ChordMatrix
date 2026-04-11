@@ -17,7 +17,6 @@ namespace ChordMatrix {
         void setSelectedStep(int stepIndex);
         int getSelectedStep() const { return selectedStep; }
 
-        // ★修正済み: public に配置されているため外部からアクセス可能
         int getEffectiveStep(int targetS) const;
 
         std::function<void()> onSettingsChanged;
@@ -35,6 +34,9 @@ namespace ChordMatrix {
         void updateInspector();
         int getStepsPerBar() const;
         float getPpqPerStep() const;
+
+        // ★追加: 堅牢なメンバ関数としてスコープ適用ロジックを再定義
+        void applyScope(int scopeType, std::function<void(int)> setterFunction);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InspectorComponent)
     };
