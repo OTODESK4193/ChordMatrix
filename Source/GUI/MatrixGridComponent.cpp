@@ -5,7 +5,7 @@
 namespace ChordMatrix {
 
     MatrixGridComponent::MatrixGridComponent(ChordMatrixAudioProcessor& p) : audioProcessor(p) {
-        // ローカル座標（左端から）で配置
+        // ローカル座標（コンポーネントの左端基準）でボタンを配置
         progBtnBounds = juce::Rectangle<int>(0, 15, 110, 30);
         allClearBtnBounds = juce::Rectangle<int>(120, 15, 110, 30);
         dragMidiBtnBounds = juce::Rectangle<int>(240, 15, 110, 30);
@@ -70,11 +70,11 @@ namespace ChordMatrix {
 
         g.fillAll(bg);
 
-        // 追加: ボタンの描画
+        // ボタンの描画を最前面（MatrixGrid内）で実行
         auto drawBtn = [&](int x, int y, int w, int h, const char* txt, bool active, juce::Colour c) {
             g.setColour(active ? c : juce::Colour(0xff3a3a3a));
             g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h), 4.0f);
-            g.setColour(active ? juce::Colour(0xff1a1a1a) : juce::Colours::white); g.setFont(12.0f);
+            g.setColour(active ? juce::Colour(0xff1a1a1a) : textLight); g.setFont(12.0f);
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
             };
 
@@ -267,7 +267,6 @@ namespace ChordMatrix {
     void MatrixGridComponent::mouseDown(const juce::MouseEvent& e) {
         isDraggingMidi = false;
 
-        // ボタンのクリック判定
         if (progBtnBounds.contains(e.getPosition())) {
             isProgressionMode = !isProgressionMode;
             repaint();
@@ -514,7 +513,7 @@ namespace ChordMatrix {
             return;
         }
 
-        // Barボタンごとのドラッグ (個別小節出力)
+        // Barボタンのドラッグ (個別小節出力)
         if (!isDraggingMidi && e.mouseWasDraggedSinceMouseDown()) {
             int stepsPerBar = getStepsPerBar();
             float w = seqTotalWidth / 8.0f;

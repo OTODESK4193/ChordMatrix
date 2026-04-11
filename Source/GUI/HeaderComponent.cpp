@@ -16,7 +16,10 @@ namespace ChordMatrix {
             };
 
         setupCombo(timeSigNumMenu, timeSigLabel);
-        timeSigNumMenu.onChange = [this] { audioProcessor.apvts.getParameter("timeSigNum")->setValueNotifyingHost((timeSigNumMenu.getSelectedId() - 1) / 14.0f); };
+        timeSigNumMenu.onChange = [this] {
+            audioProcessor.apvts.getParameter("timeSigNum")->setValueNotifyingHost((timeSigNumMenu.getSelectedId() - 1) / 14.0f);
+            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            };
 
         setupCombo(timeSigDenMenu, timeSigSlashLabel);
         timeSigDenMenu.addItem("4", 1); timeSigDenMenu.addItem("8", 2); timeSigDenMenu.addItem("16", 3);
@@ -24,16 +27,21 @@ namespace ChordMatrix {
             audioProcessor.apvts.getParameter("timeSigDen")->setValueNotifyingHost((timeSigDenMenu.getSelectedId() - 1) / 2.0f);
             updateTimeSigLimits();
             updateStepSizeMenu();
+            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
             };
 
         setupCombo(stepSizeMenu, stepSizeLabel);
         stepSizeMenu.onChange = [this] {
             audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f);
+            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
             };
 
         setupCombo(loopBarsMenu, barsLabel);
         loopBarsMenu.addItem("1", 1); loopBarsMenu.addItem("4", 2); loopBarsMenu.addItem("8", 3); loopBarsMenu.addItem("12", 4); loopBarsMenu.addItem("16", 5);
-        loopBarsMenu.onChange = [this] { audioProcessor.apvts.getParameter("loopBars")->setValueNotifyingHost((loopBarsMenu.getSelectedId() - 1) / 4.0f); };
+        loopBarsMenu.onChange = [this] {
+            audioProcessor.apvts.getParameter("loopBars")->setValueNotifyingHost((loopBarsMenu.getSelectedId() - 1) / 4.0f);
+            if (onRepaintRequest) onRepaintRequest(); // ★修正: 変更時に即時再描画
+            };
 
         addAndMakeVisible(tempoSlider); addAndMakeVisible(tempoLabel);
         tempoSlider.setSliderStyle(juce::Slider::LinearBar);
@@ -44,7 +52,9 @@ namespace ChordMatrix {
         tempoSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff3a3a3a));
         tempoLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
         tempoLabel.attachToComponent(&tempoSlider, true);
-        tempoSlider.onValueChange = [this] { audioProcessor.apvts.getParameter("tempo")->setValueNotifyingHost((tempoSlider.getValue() - 20.0f) / 280.0f); };
+        tempoSlider.onValueChange = [this] {
+            audioProcessor.apvts.getParameter("tempo")->setValueNotifyingHost((tempoSlider.getValue() - 20.0f) / 280.0f);
+            };
 
         timeSigDenMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigDen") + 1, juce::dontSendNotification);
         updateTimeSigLimits();
@@ -120,7 +130,7 @@ namespace ChordMatrix {
 
         auto drawBtn = [&](int x, int y, int w, int h, const char* txt, bool active, juce::Colour c) {
             g.setColour(active ? c : juce::Colour(0xff3a3a3a));
-            g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
+            g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h), 4.0f);
             g.setColour(active ? juce::Colour(0xff1a1a1a) : textLight); g.setFont(12.0f);
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
             };

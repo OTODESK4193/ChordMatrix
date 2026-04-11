@@ -10,7 +10,15 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
     addAndMakeVisible(inspector);
     addAndMakeVisible(matrixGrid);
 
-    header.onRepaintRequest = [this] { repaint(); };
+    header.onRepaintRequest = [this] {
+        matrixGrid.repaint();
+        inspector.repaint();
+        repaint();
+        };
+
+    // Followボタンの状態を受け取る
+    header.onFollowModeChanged = [this](bool follow) { isFollowMode = follow; };
+
     inspector.onSettingsChanged = [this] { matrixGrid.repaint(); };
 
     matrixGrid.onStepSelected = [this](int step) {
@@ -42,9 +50,13 @@ void ChordMatrixAudioProcessorEditor::timerCallback() {
         int playingBar = currentStepInLoop / stepsPerBar;
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
 
-        if (playingBar != editBar && playingBar < 16) {
-            audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(playingBar) / 15.0f);
+        // FollowモードONの時のみ、再生位置に合わせてBarを追尾させる
+        if (isFollowMode) {
+            if (playingBar != editBar && playingBar < 16) {
+                audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(playingBar) / 15.0f);
+            }
         }
+
         matrixGrid.repaint();
     }
 }

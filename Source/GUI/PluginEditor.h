@@ -22,5 +22,7 @@ private:
     ChordMatrix::InspectorComponent inspector;
     ChordMatrix::MatrixGridComponent matrixGrid;
 
+    bool isFollowMode = false; // Follow状態の保持
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordMatrixAudioProcessorEditor)
 };

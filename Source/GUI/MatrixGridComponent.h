@@ -21,7 +21,6 @@ namespace ChordMatrix {
         std::function<void()> onRepaintRequest;
 
         void setProgressionMode(bool isProg);
-
         int getStepsPerBar() const;
         float getPpqPerStep() const;
 
