@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <map>
 
 namespace ChordMatrix
 {
@@ -45,14 +46,12 @@ namespace ChordMatrix
         // =====================================================================
         else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
-            // 現在のスケールに基づく正確なDiatonic Pitchを取得
             int p3 = MusicTheory::getBasePitch(step, 1);
             int p5 = MusicTheory::getBasePitch(step, 2);
             int p7 = MusicTheory::getBasePitch(step, 3);
             int p9 = MusicTheory::getBasePitch(step, 4);
             int p13 = MusicTheory::getBasePitch(step, 6);
 
-            // ルートからのインターバルを計算（度数判定用）
             int int3 = (((p3 - r) % 12) + 12) % 12;
             int int5 = (((p5 - r) % 12) + 12) % 12;
             int int7 = (((p7 - r) % 12) + 12) % 12;
@@ -62,42 +61,27 @@ namespace ChordMatrix
 
             int n1, n2, n3, n4;
             if (isDom) {
-                // ドミナントでは5thを13th（またはスケール固有のb13等）に置換し緊張を高める
-                n1 = p3;
-                n2 = p13;
-                n3 = p7;
-                n4 = p9;
+                n1 = p3; n2 = p13; n3 = p7; n4 = p9;
             }
             else if (isHalfDim) {
-                // ハーフディミニッシュではb9の衝突を避けるため、9thの代わりにルートを採用
-                n1 = p3;
-                n2 = p5;
-                n3 = p7;
-                n4 = r + 12;
+                n1 = p3; n2 = p5; n3 = p7; n4 = r + 12;
             }
             else {
-                // メジャー / マイナー: 標準的な3, 5, 7, 9
-                n1 = p3;
-                n2 = p5;
-                n3 = p7;
-                n4 = p9;
+                n1 = p3; n2 = p5; n3 = p7; n4 = p9;
             }
 
-            // オクターブ位置をクローズド（密集配置）に補正する
             n1 = r + (((n1 - r) % 12) + 12) % 12;
             n2 = n1 + (((n2 - n1) % 12) + 12) % 12; if (n2 == n1) n2 += 12;
             n3 = n2 + (((n3 - n2) % 12) + 12) % 12; if (n3 == n2) n3 += 12;
             n4 = n3 + (((n4 - n3) % 12) + 12) % 12; if (n4 == n3) n4 += 12;
 
             if (step.voicingMode == 4) {
-                // Type A (3rd最下音)
                 outPitches[0] = n1 + step.voices[0].accidental;
                 outPitches[1] = n2 + step.voices[1].accidental;
                 outPitches[2] = n3 + step.voices[2].accidental;
                 outPitches[3] = n4 + step.voices[3].accidental;
             }
             else {
-                // Type B (7th最下音、上部2音を1オクターブ下へ配置)
                 outPitches[0] = n3 - 12 + step.voices[0].accidental;
                 outPitches[1] = n4 - 12 + step.voices[1].accidental;
                 outPitches[2] = n1 + step.voices[2].accidental;
@@ -110,7 +94,6 @@ namespace ChordMatrix
         // =====================================================================
         else if (step.voicingMode == 8) {
             int r = rootPitch;
-            // Diatonic 4ths をスケールから抽出 (Root, 11th, 7th, 3rd)
             int p11 = MusicTheory::getBasePitch(step, 5);
             int p7 = MusicTheory::getBasePitch(step, 3);
             int p3 = MusicTheory::getBasePitch(step, 1);
@@ -139,7 +122,6 @@ namespace ChordMatrix
         // スケール追従型 So What ボイシング
         // =====================================================================
         else if (step.voicingMode == 12) {
-            // Diatonic: Root, 11th, 7th, 3rd, 5th
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 5) - 12 + step.voices[1].accidental;
             outPitches[2] = MusicTheory::getBasePitch(step, 3) - 12 + step.voices[2].accidental;
@@ -436,7 +418,7 @@ namespace ChordMatrix
     }
 
     // =========================================================================
-    // ★AI最適化エンジン: 複数の候補をシミュレーションして多目的コスト関数で評価
+    // ★新AI最適化エンジン: 幾何学的音楽理論、ジャズガイドトーン、対位法禁則の統合
     // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
         int prevActiveStep = -1;
@@ -448,17 +430,15 @@ namespace ChordMatrix
             if (hasActive) { prevActiveStep = s; break; }
         }
 
-        if (prevActiveStep < 0) return; // 前にコードがない場合はスキップ
+        if (prevActiveStep < 0) return; // 前和音が存在しない場合は最適化不可
 
         std::array<int, 7> prevPitches = { 0 };
         int prevCount = getVoicedPitches(seq[prevActiveStep], prevPitches);
         if (prevCount == 0) return;
 
-        // 評価用候補構造体
         struct Candidate {
             int voicingMode;
             int inversion;
-            int shift;
             float cost;
         };
         std::vector<Candidate> candidates;
@@ -467,7 +447,7 @@ namespace ChordMatrix
         bool autoPat = isAutoPattern(baseStep.voicingMode);
 
         std::vector<int> modesToTry;
-        // ルートレスの場合はA/B両方を試行して滑らかな方を自動採用する
+        // Rootlessの場合はAとB両方を試行し、クロストレスな方を自動選択する
         if (baseStep.voicingMode == 4 || baseStep.voicingMode == 5) {
             modesToTry = { 4, 5 };
         }
@@ -475,28 +455,32 @@ namespace ChordMatrix
             modesToTry = { baseStep.voicingMode };
         }
 
-        // オートパターンの場合はインバージョンは無効なので1回、手動の場合は7回試行
-        int maxInv = autoPat ? 1 : 7;
+        int maxInv = autoPat ? 1 : 7; // オートパターンの場合はインバージョン不要
 
-        // あらゆるオクターブ・転回形・フォームの組み合わせを生成
+        // ★注意: ご要望に基づき「shift」は絶対に変更せず、インバージョンとボイシングモードのみを探索する
         for (int mode : modesToTry) {
             for (int inv = 0; inv < maxInv; ++inv) {
-                for (int oct = -2; oct <= 2; ++oct) {
-                    Candidate c;
-                    c.voicingMode = mode;
-                    c.inversion = inv;
-                    c.shift = oct * 12; // 全体のシフト量で上下させる
-                    candidates.push_back(c);
-                }
+                Candidate c;
+                c.voicingMode = mode;
+                c.inversion = inv;
+                candidates.push_back(c);
             }
         }
 
-        // 各候補のコスト（ペナルティ）を計算
+        // --- 事前準備：ジャズガイドトーン (3rd & 7th) の特定 ---
+        int prev7thPC = -1;
+        if (seq[prevActiveStep].chordDegree == 1 || seq[prevActiveStep].chordDegree == 4) {
+            prev7thPC = (((MusicTheory::getBasePitch(seq[prevActiveStep], 3) + seq[prevActiveStep].shift) % 12) + 12) % 12;
+        }
+        int curr3rdPC = (((MusicTheory::getBasePitch(baseStep, 1) + baseStep.shift) % 12) + 12) % 12;
+        bool isGuideToneResolution = (seq[prevActiveStep].chordDegree == 1 && baseStep.chordDegree == 4) ||
+            (seq[prevActiveStep].chordDegree == 4 && baseStep.chordDegree == 0);
+
         for (auto& c : candidates) {
             StepData testStep = baseStep;
             testStep.voicingMode = c.voicingMode;
             testStep.inversion = c.inversion;
-            testStep.shift = c.shift;
+            // shiftは元のまま維持される
 
             std::array<int, 7> testPitches = { 0 };
             int testCount = getVoicedPitches(testStep, testPitches);
@@ -504,57 +488,97 @@ namespace ChordMatrix
             c.cost = 0.0f;
             if (testCount == 0) { c.cost = 999999.0f; continue; }
 
-            // ① ボイスリーディングの滑らかさ (L1ノルム距離の総和)
-            float voiceLeadingCost = 0.0f;
+            // ① L1ノルム (Taxicab Metric) + L∞ノルム (Chebyshev Metric)
+            float l1Cost = 0.0f;
+            int maxJump = 0;
+
             for (int i = 0; i < testCount; ++i) {
                 int minDist = 9999;
                 for (int j = 0; j < prevCount; ++j) {
                     int dist = std::abs(testPitches[i] - prevPitches[j]);
                     if (dist < minDist) minDist = dist;
                 }
-                voiceLeadingCost += static_cast<float>(minDist);
+                l1Cost += static_cast<float>(minDist);
+                if (minDist > maxJump) maxJump = minDist;
+
+                // ネオ・リーマン的パーシモニアス評価 (共通音の保持にボーナス)
+                if (minDist == 0) c.cost -= 10.0f;
             }
-            c.cost += voiceLeadingCost;
+            c.cost += l1Cost * 2.0f; // 基本の移動距離コスト
+            if (maxJump > 6) c.cost += static_cast<float>(maxJump) * 5.0f; // 大跳躍には指数的ペナルティ
 
-            // ② 親指の法則 (Highest note around Middle C to G5: 60 ~ 79)
+            // ② ジャズ和声：ガイドトーンの解決 (7th -> 3rd by semitone/tone)
+            if (isGuideToneResolution && prev7thPC != -1) {
+                for (int i = 0; i < prevCount; ++i) {
+                    if ((((prevPitches[i] % 12) + 12) % 12) == prev7thPC) {
+                        for (int j = 0; j < testCount; ++j) {
+                            if ((((testPitches[j] % 12) + 12) % 12) == curr3rdPC) {
+                                int dist = testPitches[j] - prevPitches[i];
+                                // 7度が半音か全音下がって3度になる美しい連結を発見
+                                if (dist == -1 || dist == -2) {
+                                    c.cost -= 50.0f; // 圧倒的な優位性を与える
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ③ 伝統的対位法：連続5度・連続8度の厳格な禁止
+            if (testCount == prevCount) {
+                for (int i = 0; i < testCount - 1; ++i) {
+                    for (int j = i + 1; j < testCount; ++j) {
+                        int prevInt = (prevPitches[j] - prevPitches[i]) % 12;
+                        int currInt = (testPitches[j] - testPitches[i]) % 12;
+
+                        if ((prevInt == 7 || prevInt == 0) && currInt == prevInt) {
+                            // 同じ方向に移動しているか（並行）をチェック
+                            if ((testPitches[i] - prevPitches[i]) * (testPitches[j] - prevPitches[j]) > 0) {
+                                c.cost += 1000.0f; // 禁則違反（即座に枝刈り相当）
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ④ 親指の法則 (Rule of Thumb: ピアニストの最高音は C4~G5 に収めるべき)
             int highestPitch = testPitches[testCount - 1];
-            if (highestPitch > 79) c.cost += static_cast<float>(highestPitch - 79) * 5.0f; // 高すぎるのは致命的ペナルティ
-            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 2.0f; // 低いのもペナルティ
+            if (highestPitch > 79) c.cost += static_cast<float>(highestPitch - 79) * 5.0f;
+            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 5.0f;
 
-            // ③ Low Interval Limit (低音域の濁り防止)
+            // ⑤ Low Interval Limit (低音域の濁り防止)
             int lowestPitch = testPitches[0];
             if (lowestPitch < 40) c.cost += static_cast<float>(40 - lowestPitch) * 3.0f;
         }
 
-        // コストが低い順（最適解順）にソート
+        // コスト順にソート (動的計画法におけるローカル最適パスのランキング)
         std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
             return a.cost < b.cost;
             });
 
         if (!candidates.empty()) {
-            // 重複する結果を除外して、クリックするたびに確実に違うフォームが出るようにする
             std::vector<Candidate> uniqueCandidates;
             uniqueCandidates.push_back(candidates[0]);
+
+            // 重複解を除外（同じ響きを排除）
             for (size_t i = 1; i < candidates.size(); ++i) {
                 bool isUnique = true;
                 for (const auto& uc : uniqueCandidates) {
-                    // 全く同じ配置なら除外
                     if (candidates[i].voicingMode == uc.voicingMode &&
-                        candidates[i].inversion == uc.inversion &&
-                        candidates[i].shift == uc.shift) {
+                        candidates[i].inversion == uc.inversion) {
                         isUnique = false; break;
                     }
                 }
                 if (isUnique) uniqueCandidates.push_back(candidates[i]);
             }
 
-            // altIndex を利用してランキングのN位の解を適用する
+            // ユーザーがボタンを押すたびに、2位、3位のオルタナティヴな最適解に切り替わる
             int selectedIdx = altIndex % uniqueCandidates.size();
             auto& best = uniqueCandidates[selectedIdx];
 
             seq[targetStep].voicingMode = best.voicingMode;
             seq[targetStep].inversion = best.inversion;
-            seq[targetStep].shift = best.shift;
+            // Shiftの変更コードは完全に削除されました
         }
     }
 }
