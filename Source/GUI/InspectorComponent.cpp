@@ -203,21 +203,40 @@ namespace ChordMatrix {
         g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 15, 300, 20, juce::Justification::centredLeft);
 
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
+        int effStep = getEffectiveStep(selectedStep);
 
+        // =======================================================================
+        // ★修正: 選択音(Notes)をシンセサイザー風の「丸いバッジ」で可視化
+        // =======================================================================
         if (selectedStep >= 0) {
             std::array<int, 7> vps = { 0 };
-            int effStep = getEffectiveStep(selectedStep);
             int count = VoicingEngine::getVoicedPitches(activeSeqData[effStep], vps);
 
-            juce::String noteStr = "";
+            int badgeRadius = 15;
+            int startX = 140;
+            int startY = 15;
+            int spacingX = 35;
+            int spacingY = 35;
+
             for (int i = 0; i < count; ++i) {
-                if (i > 0) noteStr << ", ";
-                noteStr << MusicTheory::getNoteName(vps[i]) << ((vps[i] / 12) - 1);
-            }
-            if (noteStr.isNotEmpty()) {
-                g.setColour(juce::Colour(0xffffa500));
-                g.setFont(juce::Font(14.0f, juce::Font::bold));
-                g.drawFittedText("NOTES:\n" + noteStr, 150, 35, 200, 40, juce::Justification::centredLeft, 2);
+                int p = vps[i];
+                juce::String nName = MusicTheory::getNoteName(p);
+                juce::String oct = juce::String((p / 12) - 1);
+
+                int cx = startX + (i % 5) * spacingX;
+                int cy = startY + (i / 5) * spacingY;
+
+                // バッジの背景
+                g.setColour(juce::Colour(0xff2a2a2a));
+                g.fillEllipse((float)cx, (float)cy, badgeRadius * 2.0f, badgeRadius * 2.0f);
+                // バッジの枠線（オレンジ）
+                g.setColour(juce::Colour(0xffffa500).withAlpha(0.8f));
+                g.drawEllipse((float)cx, (float)cy, badgeRadius * 2.0f, badgeRadius * 2.0f, 1.5f);
+
+                // 音名の描画
+                g.setColour(juce::Colours::white);
+                g.setFont(juce::Font(12.0f, juce::Font::bold));
+                g.drawText(nName + oct, cx, cy, badgeRadius * 2, badgeRadius * 2, juce::Justification::centred);
             }
         }
 
@@ -248,7 +267,6 @@ namespace ChordMatrix {
         drawScopeToggle(scopeOptimize, toggleX, 305, toggleW, 30);
         drawScopeToggle(scopeShift, toggleX, 350, toggleW, 30);
 
-        int effStep = getEffectiveStep(selectedStep);
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
 
         // コードネーム表示エリア (高さを120pxに調整)
@@ -281,10 +299,9 @@ namespace ChordMatrix {
         }
 
         // =======================================================================
-        // ★新規追加: 縦空間の余白を贅沢に使った「動的スケールマップ」
-        // Y=550からウィンドウ最下部(800)までの広大なエリアを活用
+        // ★修正: 拡張した縦空間(880px)をフル活用した「動的スケールマップ」
         // =======================================================================
-        juce::Rectangle<int> scaleArea(20, 550, 340, 220);
+        juce::Rectangle<int> scaleArea(20, 550, 340, 310);
 
         g.setColour(juce::Colour(0xff222222));
         g.fillRoundedRectangle(scaleArea.toFloat(), 8.0f);

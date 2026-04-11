@@ -1,12 +1,16 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// ------------------------------------------------------------
+// 変更後 (PluginEditor.cpp 冒頭のコンストラクタ内)
+// ------------------------------------------------------------
 ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), header(p), inspector(p), matrixGrid(p)
 {
-    setSize(1250, 800);
+    setSize(1250, 880); // ★修正: サジェストUIの表示領域確保のため高さを880pxに拡張
 
     addAndMakeVisible(header);
+    // ...
     addAndMakeVisible(inspector);
     addAndMakeVisible(matrixGrid);
 

@@ -273,21 +273,34 @@ namespace ChordMatrix {
             return;
         }
 
+        // ------------------------------------------------------------
+        // 変更後 (MatrixGridComponent.cpp の paint メソッド中盤)
+        // ------------------------------------------------------------
         g.setFont(12.0f);
         g.setColour(juce::Colours::grey);
         g.drawText("INV", 0, 155 - 30, static_cast<int>(leftMargin) - 10, 25, juce::Justification::centredRight);
 
-        static const char* const vNames[] = { "6/13th", "4/11th", "2/9th", "7th", "5th", "3rd", "Root" };
-        for (int i = 0; i < 7; ++i) {
-            juce::String vn(vNames[i]);
-            if (vn.isNotEmpty()) {
-                g.drawText(vn, 0, 155 + static_cast<int>(static_cast<float>(i) * cellHeight), static_cast<int>(leftMargin) - 10, static_cast<int>(cellHeight), juce::Justification::centredRight);
+        // ★修正: 選択ステップのスケールに追従する動的Y軸ラベル
+        int currentScaleType = audioProcessor.sequenceData[selectedStep].scaleType;
+        int numNotes = MusicTheory::getScaleNoteCount(currentScaleType);
+        auto intNames = MusicTheory::getScaleIntervalNames(currentScaleType);
+
+        for (int v = 0; v < 7; ++v) {
+            int voiceIdx = 6 - v; // 下のレーンが Voice 0
+            int offsetDegrees = voiceIdx * 2;
+            int octaves = offsetDegrees / numNotes;
+            int scaleDegree = offsetDegrees % numNotes;
+
+            juce::String vn = intNames[scaleDegree];
+            if (octaves > 0) {
+                vn += " (+" + juce::String(octaves) + "8va)"; // オクターブのラップアラウンド表記
             }
+
+            g.drawText(vn, 0, 155 + static_cast<int>(static_cast<float>(v) * cellHeight), static_cast<int>(leftMargin) - 10, static_cast<int>(cellHeight), juce::Justification::centredRight);
         }
 
         g.setColour(juce::Colours::indianred);
         g.drawText("DEL", 0, 155 + static_cast<int>(7.0f * cellHeight), static_cast<int>(leftMargin) - 10, 30, juce::Justification::centredRight);
-
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();
