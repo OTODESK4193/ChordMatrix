@@ -41,23 +41,16 @@ namespace ChordMatrix
     }
 
     int VoicingEngine::getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches) {
-        // =========================================================
-        // パターンB: 自動生成 + ミュート除外
-        // =========================================================
         if (step.voicingMode >= 4) {
             std::array<int, 7> temp = { 0 };
             int maxV = getPatternBPitches(step, temp);
             int count = 0;
             for (int i = 0; i < maxV; ++i) {
-                // -128はミュートフラグとして扱う
                 if (step.voices[i].octaveShift != -128) outPitches[count++] = temp[i];
             }
             return count;
         }
 
-        // =========================================================
-        // パターンA: 通常ボイシング (Close, Drop, Spread)
-        // =========================================================
         int count = 0;
         for (int v = 0; v < NumVoices; ++v) {
             if (step.voices[v].isActive) {
@@ -83,9 +76,9 @@ namespace ChordMatrix
         else if (step.voicingMode == 3 && count >= 1) {
             int lowest = outPitches[0];
             for (int i = count; i > 0; --i) outPitches[i] = outPitches[i - 1];
-            outPitches[0] = lowest - 12; // 左手ベース
+            outPitches[0] = lowest - 12;
             count++;
-            if (count > 3) outPitches[2] += 12; // 元の1stをさらにオクターブ上げて空間を広げる
+            if (count > 3) outPitches[2] += 12;
             std::sort(outPitches.begin(), outPitches.begin() + count);
         }
 
@@ -116,7 +109,7 @@ namespace ChordMatrix
 
         if (step.voicingMode == 1 && count >= 4) pitches[count - 2].first -= 12;
         else if (step.voicingMode == 2 && count >= 4) pitches[count - 3].first -= 12;
-        else if (step.voicingMode == 3 && count >= 3) pitches[1].first += 12; // Spreadのシフト対象(インサート前のインデックス1)
+        else if (step.voicingMode == 3 && count >= 3) pitches[1].first += 12;
 
         for (int i = 0; i < count; ++i) {
             if (pitches[i].second == voiceIdx) return pitches[i].first;
@@ -183,7 +176,6 @@ namespace ChordMatrix
                     bool hasDom7 = hasRel[10];
                     bool hasMaj7 = hasRel[11];
 
-                    // 骨格が維持されていればB案（テンション追記）
                     if ((isMinor || isMajor) && (hasDom7 || hasMaj7)) {
                         juce::String ext = "";
                         if (hasRel[1] || hasRel[2]) ext += "9 ";
@@ -197,59 +189,97 @@ namespace ChordMatrix
 
                         return rootName + customType + " (Rootless)\nadd " + ext.trim();
                     }
-                    // 維持されていなければ下の純粋解析(A案)へフォールスルー
                 }
             }
         }
 
+        // =========================================================
+        // パターンA (動的ルート探索による高精度コード推論)
+        // =========================================================
         std::array<int, 7> voicedPitches = { 0 };
         int activeCount = getVoicedPitches(step, voicedPitches);
+        if (activeCount == 0) return "-";
 
         bool has[12] = { false };
-        for (int i = 0; i < activeCount; ++i) has[(voicedPitches[i] % 12 + 12) % 12] = true;
-
-        bool relHas[12] = { false };
-        for (int i = 0; i < 12; ++i) if (has[i]) relHas[(i - theoreticalRoot + 12) % 12] = true;
-
-        juce::String type = "??";
-        if (relHas[0] && relHas[4] && relHas[7]) {
-            type = "Maj"; if (relHas[10]) type = "7"; if (relHas[11]) type = "Maj7";
+        int lowestRaw = 99999;
+        for (int i = 0; i < activeCount; ++i) {
+            if (voicedPitches[i] < lowestRaw) lowestRaw = voicedPitches[i];
+            has[(voicedPitches[i] % 12 + 12) % 12] = true;
         }
-        else if (relHas[0] && relHas[3] && relHas[7]) {
-            type = "m"; if (relHas[10]) type = "m7"; if (relHas[11]) type = "m(Maj7)";
-        }
-        else if (relHas[0] && relHas[3] && relHas[6]) {
-            type = "dim"; if (relHas[9]) type = "dim7"; if (relHas[10]) type = "m7b5";
-        }
-        else if (relHas[0] && relHas[4] && relHas[8]) type = "aug";
-        else if (relHas[0] && relHas[5] && relHas[7]) type = "sus4";
-        else if (relHas[0] && relHas[4] && !relHas[7]) type = "Maj(no5)";
-        else if (relHas[0] && relHas[3] && !relHas[7]) type = "m(no5)";
-        else if (relHas[0] && !relHas[3] && !relHas[4] && relHas[7]) type = "5";
-        else if (relHas[0]) type = "Custom";
 
-        if (type != "??" && type != "Custom") {
-            if (relHas[2]) type += "(9)"; if (relHas[5]) type += "(11)"; if (relHas[9]) type += "(13)";
-        }
-        if (type == "??" || type == "Custom") return type;
+        int bestRoot = -1;
+        juce::String bestType = "??";
+        int bestScore = -1;
 
-        juce::String absName = MusicTheory::getNoteName(theoreticalRoot) + type;
-        int keyRoot = (step.keyRoot + step.shift) % 12;
-        if (keyRoot < 0) keyRoot += 12;
+        // 鳴っている音を順番にルートと仮定して、最も成立するコードを探す
+        for (int testRoot = 0; testRoot < 12; ++testRoot) {
+            if (!has[testRoot]) continue; // 鳴っていない音はルート候補から除外
 
-        int diff = (theoreticalRoot - keyRoot + 12) % 12;
-        const char* romanNames[] = { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" };
-        juce::String relName = juce::String(romanNames[diff]) + type;
+            bool rHas[12] = { false };
+            for (int i = 0; i < 12; ++i) if (has[i]) rHas[(i - testRoot + 12) % 12] = true;
 
-        if (activeCount > 0) {
-            int lowestVoicedAbs = voicedPitches[0] % 12;
-            if (lowestVoicedAbs != theoreticalRoot) {
-                juce::String slash = "on" + MusicTheory::getNoteName(lowestVoicedAbs);
-                relName += slash; absName += slash;
+            juce::String type = "??";
+            int score = 0;
+
+            if (rHas[0] && rHas[4] && rHas[7]) {
+                type = "Maj"; score = 10;
+                if (rHas[10]) { type = "7"; score = 12; }
+                if (rHas[11]) { type = "Maj7"; score = 12; }
+            }
+            else if (rHas[0] && rHas[3] && rHas[7]) {
+                type = "m"; score = 10;
+                if (rHas[10]) { type = "m7"; score = 12; }
+                if (rHas[11]) { type = "m(Maj7)"; score = 12; }
+            }
+            else if (rHas[0] && rHas[3] && rHas[6]) {
+                type = "dim"; score = 10;
+                if (rHas[9]) { type = "dim7"; score = 12; }
+                if (rHas[10]) { type = "m7b5"; score = 12; }
+            }
+            else if (rHas[0] && rHas[4] && rHas[8]) { type = "aug"; score = 9; }
+            else if (rHas[0] && rHas[5] && rHas[7]) { type = "sus4"; score = 9; }
+            else if (rHas[0] && rHas[4] && !rHas[7]) { type = "Maj(no5)"; score = 5; }
+            else if (rHas[0] && rHas[3] && !rHas[7]) { type = "m(no5)"; score = 5; }
+            else if (rHas[0] && !rHas[3] && !rHas[4] && rHas[7]) { type = "5"; score = 4; }
+
+            if (type != "??") {
+                if (rHas[2]) type += "(9)";
+                if (rHas[5] && type != "sus4") type += "(11)";
+                if (rHas[9]) type += "(13)";
+
+                // 評価点の加算（インスペクターの指定ルートや、最低音を優先）
+                if (testRoot == theoreticalRoot) score += 5;
+                if (testRoot == (lowestRaw % 12)) score += 2;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestType = type;
+                    bestRoot = testRoot;
+                }
             }
         }
 
-        // ★追加: Drop/Spread表記の明示
+        // どのコードにも当てはまらなかった場合のフォールバック
+        if (bestType == "??") {
+            bestRoot = lowestRaw % 12;
+            bestType = (activeCount == 1) ? "" : "Custom";
+        }
+
+        juce::String absName = MusicTheory::getNoteName(bestRoot) + bestType;
+        int keyRoot = (step.keyRoot + step.shift) % 12;
+        if (keyRoot < 0) keyRoot += 12;
+
+        int diff = (bestRoot - keyRoot + 12) % 12;
+        const char* romanNames[] = { "I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII" };
+        juce::String relName = juce::String(romanNames[diff]) + bestType;
+
+        // 転回形（スラッシュコード）の表記
+        int lowestVoicedAbs = lowestRaw % 12;
+        if (lowestVoicedAbs != bestRoot && bestType != "Custom" && bestType != "") {
+            juce::String slash = "on" + MusicTheory::getNoteName(lowestVoicedAbs);
+            relName += slash; absName += slash;
+        }
+
         if (step.voicingMode == 1) { relName += " (Drop 2)"; absName += " (Drop 2)"; }
         else if (step.voicingMode == 2) { relName += " (Drop 3)"; absName += " (Drop 3)"; }
         else if (step.voicingMode == 3) { relName += " (Spread)"; absName += " (Spread)"; }
