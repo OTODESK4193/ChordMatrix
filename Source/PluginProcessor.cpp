@@ -91,7 +91,6 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
         env.reset();
     }
 
-    // プレビュー用（クリックしたとき用）のADSR
     juce::ADSR::Parameters prevParams{ 0.01f, 1.5f, 0.0f, 0.1f };
     for (auto& env : previewAdsrs) {
         env.setSampleRate(sampleRate);
@@ -186,7 +185,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     wasPlaying = isPlaying;
     lastPPQ = ppq;
 
-    // 毎フレーム：正確なNoteOff時間（GateLengthの終端）に到達した音をミュートする
     for (int i = 0; i < ChordMatrix::NumVoices; ++i)
     {
         if (currentNoteOffTimePPQ[i] > 0.0 && ppq >= currentNoteOffTimePPQ[i])
@@ -208,10 +206,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             std::array<int, 7> vps;
             int count = ChordMatrix::VoicingEngine::getVoicedPitches(sData, vps);
 
-            // ★修正ポイント: このステップに「新しい和音」が存在する場合のみ処理する（空のステップは無視して音を伸ばし続ける）
             if (count > 0)
             {
-                // 新しい和音を鳴らす前に、もし前の音が残っていれば確実にミュートする（Choke処理）
                 for (int i = 0; i < ChordMatrix::NumVoices; ++i)
                 {
                     if (currentNoteOffTimePPQ[i] > 0.0)
@@ -222,8 +218,11 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                     }
                 }
 
-                // ★修正ポイント: Sustainを80%に設定し、設定した長さの間しっかり音が持続するようにする。
-                juce::ADSR::Parameters mainParams{ 0.01f, 0.1f, 0.8f, 0.05f };
+                // ★修正: Step長を秒数に変換し、その85%（きもち短め）をDecayに設定。Sustainは0.0で自然減衰。
+                float chordDurationSec = static_cast<float>(sData.gateLength) * (60.0f / currentBPM);
+                float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.85f);
+
+                juce::ADSR::Parameters mainParams{ 0.01f, activeDecay, 0.0f, 0.01f };
 
                 for (int i = 0; i < count; ++i)
                 {
@@ -232,7 +231,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
                     midiMessages.addEvent(juce::MidiMessage::noteOn(1, p, safeVel), 0);
                     currentNoteOnPitch[i] = p;
-                    // ノートが終了する正確なPPQ（現在のPPQ + GateLength）をスケジューリング
                     currentNoteOffTimePPQ[i] = ppq + (double)sData.gateLength;
 
                     float freq = 440.0f * std::pow(2.0f, ((float)p - 69.0f) / 12.0f);
@@ -242,8 +240,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                     adsrs[i].noteOn();
                 }
             }
-
-            // ステップの更新は和音の有無に関わらず記録する
             currentGlobalStep = stepIdx;
         }
     }
