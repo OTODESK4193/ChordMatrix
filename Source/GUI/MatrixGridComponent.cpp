@@ -80,6 +80,9 @@ namespace ChordMatrix {
         setBtnStyle(btnModApply, juce::Colours::hotpink);
         setBtnStyle(btnModCancel, juce::Colours::grey);
 
+        // ------------------------------------------------------------
+        // 変更後 (MatrixGridComponent.cpp / setupModulationPanel内)
+        // ------------------------------------------------------------
         btnModPreview.onClick = [this] {
             int targetBar = modTargetBarMenu.getSelectedId() - 1;
             int targetKey = modKeyMenu.getSelectedId() - 1;
@@ -95,6 +98,9 @@ namespace ChordMatrix {
             audioProcessor.isPlayingModulationPreview.store(true);
             audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1)) * static_cast<double>(getStepsPerBar()) * static_cast<double>(getPpqPerStep());
             audioProcessor.isInternalPlaying = true;
+
+            // ★追加: プレビュー時にもサジェストパネルを更新
+            suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), getStepsPerBar());
             repaint();
             };
 
@@ -104,9 +110,11 @@ namespace ChordMatrix {
             audioProcessor.isInternalPlaying = false;
             isModulationPanelOpen = false;
             resized();
+
+            // ★追加: 確定時にもサジェストパネルを更新
+            suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), getStepsPerBar());
             if (onRepaintRequest) onRepaintRequest();
             };
-
         btnModCancel.onClick = [this] {
             audioProcessor.isPlayingModulationPreview.store(false);
             audioProcessor.isInternalPlaying = false;

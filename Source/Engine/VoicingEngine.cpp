@@ -15,6 +15,7 @@ namespace ChordMatrix
     int VoicingEngine::getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches) {
         int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
 
+        // UST ボイシング (Upper Structure Triads)
         if (step.voicingMode == 6 || step.voicingMode == 7 || (step.voicingMode >= 16 && step.voicingMode <= 19)) {
             int ustRootOffset = 0;
             if (step.voicingMode == 6) ustRootOffset = 1;
@@ -26,55 +27,114 @@ namespace ChordMatrix
 
             int ustBase = rootPitch + 12 + ustRootOffset;
 
+            // 左手骨格 (Root, 3rd, 7th)
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 4 + step.voices[1].accidental;
             outPitches[2] = rootPitch + 10 + step.voices[2].accidental;
 
+            // 右手トライアド
             outPitches[3] = ustBase + step.voices[3].accidental;
             outPitches[4] = ustBase + 4 + step.voices[4].accidental;
             outPitches[5] = ustBase + 7 + step.voices[5].accidental;
             return 6;
         }
+        // ★新規実装: スケール完全追従型 ルートレス・ボイシング (Type A / Type B)
         else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
-            int typeA[4] = { r, r, r, r };
+            // 現在のスケールに基づく正確なDiatonic Pitchを取得
+            int p3 = MusicTheory::getBasePitch(step, 1);
+            int p5 = MusicTheory::getBasePitch(step, 2);
+            int p7 = MusicTheory::getBasePitch(step, 3);
+            int p9 = MusicTheory::getBasePitch(step, 4);
+            int p13 = MusicTheory::getBasePitch(step, 6);
 
-            if (step.chordDegree == 1) { typeA[0] = r + 3; typeA[1] = r + 7; typeA[2] = r + 10; typeA[3] = r + 14; }
-            else if (step.chordDegree == 4) { typeA[0] = r + 4; typeA[1] = r + 9; typeA[2] = r + 10; typeA[3] = r + 14; }
-            else { typeA[0] = r + 4; typeA[1] = r + 7; typeA[2] = r + 11; typeA[3] = r + 14; }
+            // ルートからのインターバルを計算（度数判定用）
+            int int3 = (((p3 - r) % 12) + 12) % 12;
+            int int5 = (((p5 - r) % 12) + 12) % 12;
+            int int7 = (((p7 - r) % 12) + 12) % 12;
 
-            if (step.voicingMode == 4) {
-                for (int i = 0; i < 4; ++i) {
-                    outPitches[i] = typeA[i] + step.voices[i].accidental;
-                }
+            bool isDom = (int3 == 4 && int7 == 10);
+            bool isHalfDim = (int3 == 3 && int5 == 6 && int7 == 10);
+
+            int n1, n2, n3, n4;
+            if (isDom) {
+                // 資料 3.2: ドミナントでは5thを13th（またはスケール固有のb13等）に置換し緊張を高める
+                n1 = p3;
+                n2 = p13;
+                n3 = p7;
+                n4 = p9;
+            }
+            else if (isHalfDim) {
+                // 資料 3.4: ハーフディミニッシュではb9の衝突を避けるため、9thの代わりにルートを採用
+                n1 = p3;
+                n2 = p5;
+                n3 = p7;
+                n4 = r + 12;
             }
             else {
-                outPitches[0] = typeA[2] - 12 + step.voices[0].accidental;
-                outPitches[1] = typeA[3] - 12 + step.voices[1].accidental;
-                outPitches[2] = typeA[0] + step.voices[2].accidental;
-                outPitches[3] = typeA[1] + step.voices[3].accidental;
+                // メジャー / マイナー: 標準的な3, 5, 7, 9
+                n1 = p3;
+                n2 = p5;
+                n3 = p7;
+                n4 = p9;
+            }
+
+            // オクターブ位置をクローズド（密集配置）に補正する
+            n1 = r + (((n1 - r) % 12) + 12) % 12;
+            n2 = n1 + (((n2 - n1) % 12) + 12) % 12; if (n2 == n1) n2 += 12;
+            n3 = n2 + (((n3 - n2) % 12) + 12) % 12; if (n3 == n2) n3 += 12;
+            n4 = n3 + (((n4 - n3) % 12) + 12) % 12; if (n4 == n3) n4 += 12;
+
+            if (step.voicingMode == 4) { // Type A (3rd最下音)
+                outPitches[0] = n1 + step.voices[0].accidental;
+                outPitches[1] = n2 + step.voices[1].accidental;
+                outPitches[2] = n3 + step.voices[2].accidental;
+                outPitches[3] = n4 + step.voices[3].accidental;
+            }
+            else { // Type B (7th最下音、上部2音を下へ)
+                outPitches[0] = n3 - 12 + step.voices[0].accidental;
+                outPitches[1] = n4 - 12 + step.voices[1].accidental;
+                outPitches[2] = n1 + step.voices[2].accidental;
+                outPitches[3] = n2 + step.voices[3].accidental;
             }
             return 4;
         }
+        // ★新規実装: スケール追従型 Quartal ボイシング
         else if (step.voicingMode == 8) {
-            outPitches[0] = rootPitch + step.voices[0].accidental;
-            outPitches[1] = rootPitch + 5 + step.voices[1].accidental;
-            outPitches[2] = rootPitch + 10 + step.voices[2].accidental;
-            outPitches[3] = rootPitch + 15 + step.voices[3].accidental;
+            int r = rootPitch;
+            // Diatonic 4ths をスケールから抽出 (Root, 11th, 7th, 3rd)
+            int p11 = MusicTheory::getBasePitch(step, 5);
+            int p7 = MusicTheory::getBasePitch(step, 3);
+            int p3 = MusicTheory::getBasePitch(step, 1);
+
+            int n1 = r;
+            int n2 = n1 + (((p11 - n1) % 12) + 12) % 12; if (n2 == n1) n2 += 12;
+            int n3 = n2 + (((p7 - n2) % 12) + 12) % 12; if (n3 == n2) n3 += 12;
+            int n4 = n3 + (((p3 - n3) % 12) + 12) % 12; if (n4 == n3) n4 += 12;
+
+            outPitches[0] = n1 + step.voices[0].accidental;
+            outPitches[1] = n2 + step.voices[1].accidental;
+            outPitches[2] = n3 + step.voices[2].accidental;
+            outPitches[3] = n4 + step.voices[3].accidental;
             return 4;
         }
+        // Shell (1-3-7) は既にスケール追従済み
         else if (step.voicingMode == 9) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 1) + step.voices[1].accidental;
             outPitches[2] = MusicTheory::getBasePitch(step, 3) + step.voices[3].accidental;
             return 3;
         }
+        // ★新規実装: スケール追従型 So What ボイシング
         else if (step.voicingMode == 12) {
+            // Diatonic: Root, 11th, 7th, 3rd, 5th
             outPitches[0] = rootPitch + step.voices[0].accidental;
-            outPitches[1] = rootPitch + 5 + step.voices[1].accidental;
-            outPitches[2] = rootPitch + 10 + step.voices[2].accidental;
-            outPitches[3] = rootPitch + 15 + step.voices[3].accidental;
-            outPitches[4] = rootPitch + 19 + step.voices[4].accidental;
+            outPitches[1] = MusicTheory::getBasePitch(step, 5) - 12 + step.voices[1].accidental;
+            outPitches[2] = MusicTheory::getBasePitch(step, 3) - 12 + step.voices[2].accidental;
+            outPitches[3] = MusicTheory::getBasePitch(step, 1) + step.voices[3].accidental;
+            outPitches[4] = MusicTheory::getBasePitch(step, 2) + step.voices[4].accidental;
+
+            std::sort(outPitches.begin(), outPitches.begin() + 5);
             return 5;
         }
         else if (step.voicingMode == 13) {
