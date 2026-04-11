@@ -299,9 +299,11 @@ namespace ChordMatrix {
         }
 
         // =======================================================================
-        // ★修正: 拡張した縦空間(880px)をフル活用した「動的スケールマップ」
-        // =======================================================================
-        juce::Rectangle<int> scaleArea(20, 550, 340, 310);
+                // ★修正: ローカルの描画領域（getHeight()）から逆算して高さを自動調整し、見切れを防止
+                // =======================================================================
+        int scaleAreaY = 550;
+        int scaleAreaHeight = getHeight() - scaleAreaY - 20; // 下部に20pxの余白を残す
+        juce::Rectangle<int> scaleArea(20, scaleAreaY, 340, scaleAreaHeight);
 
         g.setColour(juce::Colour(0xff222222));
         g.fillRoundedRectangle(scaleArea.toFloat(), 8.0f);
@@ -340,16 +342,15 @@ namespace ChordMatrix {
 
             // インターバル名（度数）
             g.setColour(juce::Colours::cyan.withAlpha(0.7f));
-            g.setFont(juce::Font(12.0f, juce::Font::plain));
-            g.drawText(intNames[i], cell.removeFromTop(16), juce::Justification::centredBottom);
+            g.setFont(juce::Font(11.0f, juce::Font::plain)); // 少し小さく調整
+            g.drawText(intNames[i], cell.removeFromTop(14), juce::Justification::centredBottom);
 
             // ノート名（大きく表示）
             g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(22.0f, juce::Font::bold));
+            g.setFont(juce::Font(18.0f, juce::Font::bold)); // 縮小した枠に合わせてフォントサイズを22->18に調整
             g.drawFittedText(noteNames[i], cell, juce::Justification::centred, 1, 0.1f);
         }
-    }
-
+    } // <-- paintメソッドの末尾
     void InspectorComponent::mouseDown(const juce::MouseEvent& e) {
         int toggleX = 210, toggleW = 45, toggleH = 30;
         if (juce::Rectangle<int>(toggleX, 125, toggleW, toggleH).contains(e.getPosition())) { scopeKey = (scopeKey + 1) % 3; repaint(); }
