@@ -1,12 +1,14 @@
 #include "InspectorComponent.h"
 #include "../Engine/VoicingEngine.h"
+#include "../Engine/MusicTheory.h"
 
 namespace ChordMatrix {
 
     InspectorComponent::InspectorComponent(ChordMatrixAudioProcessor& p) : audioProcessor(p)
     {
         auto setupCombo = [this](juce::ComboBox& box, juce::Label& lbl) {
-            addAndMakeVisible(box); addAndMakeVisible(lbl);
+            addAndMakeVisible(box);
+            addAndMakeVisible(lbl);
             box.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff252525));
             box.setColour(juce::ComboBox::textColourId, juce::Colours::white);
             box.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff3a3a3a));
@@ -17,33 +19,66 @@ namespace ChordMatrix {
             };
 
         setupCombo(stepKeyMenu, stepKeyLabel);
-        for (int i = 0; i < 12; ++i) stepKeyMenu.addItem(MusicTheory::getNoteName(i), i + 1);
-        stepKeyMenu.onChange = [this] { applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; }); };
+        for (int i = 0; i < 12; ++i) {
+            stepKeyMenu.addItem(MusicTheory::getNoteName(i), i + 1);
+        }
+        stepKeyMenu.onChange = [this] {
+            applyScope(scopeKey, [this](int s) { audioProcessor.sequenceData[s].keyRoot = stepKeyMenu.getSelectedId() - 1; });
+            };
 
         setupCombo(stepScaleMenu, stepScaleLabel);
         auto scales = MusicTheory::getScaleNames();
-        for (int i = 0; i < scales.size(); ++i) stepScaleMenu.addItem(scales[i], i + 1);
-        stepScaleMenu.onChange = [this] { applyScope(scopeScale, [this](int s) { audioProcessor.sequenceData[s].scaleType = stepScaleMenu.getSelectedId() - 1; }); };
+        for (int i = 0; i < (int)scales.size(); ++i) {
+            stepScaleMenu.addItem(scales[i], i + 1);
+        }
+        stepScaleMenu.onChange = [this] {
+            applyScope(scopeScale, [this](int s) { audioProcessor.sequenceData[s].scaleType = stepScaleMenu.getSelectedId() - 1; });
+            };
 
         setupCombo(stepDegreeMenu, stepDegreeLabel);
         auto degs = MusicTheory::getDegreeNames();
-        for (int i = 0; i < degs.size(); ++i) stepDegreeMenu.addItem(degs[i], i + 1);
-        stepDegreeMenu.onChange = [this] { applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; }); };
+        for (int i = 0; i < (int)degs.size(); ++i) {
+            stepDegreeMenu.addItem(degs[i], i + 1);
+        }
+        stepDegreeMenu.onChange = [this] {
+            applyScope(scopeDegree, [this](int s) { audioProcessor.sequenceData[s].chordDegree = stepDegreeMenu.getSelectedId() - 1; });
+            };
 
         setupCombo(voicingMenu, voicingLabel);
-        const char* vNames[] = {
-            "Close", "Drop 2", "Drop 3", "Spread", "Rootless A", "Rootless B", "UST (bII)", "UST (bVI)",
-            "Quartal (4ths)", "Shell (1-3-7)", "Drop 2 & 4", "Drop 2 & 3", "So What (m11)", "Cluster (2nds)", "Kenny Barron", "Block Chords"
-        };
-        for (int i = 0; i < 16; ++i) voicingMenu.addItem(vNames[i], i + 1);
-        voicingMenu.onChange = [this] { applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; }); };
+        // ★修正: 論文に基づく拡張を含めた全19種類のボイシングを登録
+        voicingMenu.addItem("Close", 1);
+        voicingMenu.addItem("Drop 2", 2);
+        voicingMenu.addItem("Spread", 3);
+        voicingMenu.addItem("Rootless A", 4);
+        voicingMenu.addItem("Rootless B", 5);
+        voicingMenu.addItem("UST (bII)", 6);
+        voicingMenu.addItem("UST (bVI)", 7);
+        voicingMenu.addItem("Quartal (4ths)", 8);
+        voicingMenu.addItem("Shell (1-3-7)", 9);
+        voicingMenu.addItem("Drop 2 & 4", 10);
+        voicingMenu.addItem("Drop 2 & 3", 11);
+        voicingMenu.addItem("So What (m11)", 12);
+        voicingMenu.addItem("Cluster (2nds)", 13);
+        voicingMenu.addItem("Kenny Barron", 14);
+        voicingMenu.addItem("Block Chords", 15);
+        voicingMenu.addItem("UST (bIII)", 16);
+        voicingMenu.addItem("UST (bV)", 17);
+        voicingMenu.addItem("UST (VI)", 18);
+        voicingMenu.addItem("UST (II)", 19);
+
+        voicingMenu.onChange = [this] {
+            applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; });
+            };
 
         addAndMakeVisible(btnOptimize);
         btnOptimize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
         btnOptimize.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffa500));
-        btnOptimize.onClick = [this] { applyScope(scopeOptimize, [this](int s) { VoicingEngine::optimizeStep(audioProcessor.sequenceData, s, getPpqPerStep()); }); };
+        btnOptimize.onClick = [this] {
+            applyScope(scopeOptimize, [this](int s) { VoicingEngine::optimizeStep(audioProcessor.sequenceData, s, getPpqPerStep()); });
+            };
 
-        addAndMakeVisible(stepShiftSlider); addAndMakeVisible(stepShiftLabel);
+        addAndMakeVisible(stepShiftSlider);
+        addAndMakeVisible(stepShiftLabel);
         stepShiftSlider.setSliderStyle(juce::Slider::IncDecButtons);
         stepShiftSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 50, 30);
         stepShiftSlider.setRange(-24.0, 24.0, 1.0);
@@ -53,7 +88,9 @@ namespace ChordMatrix {
         stepShiftLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
         stepShiftLabel.attachToComponent(&stepShiftSlider, true);
         stepShiftLabel.setJustificationType(juce::Justification::centred);
-        stepShiftSlider.onValueChange = [this] { applyScope(scopeShift, [this](int s) { audioProcessor.sequenceData[s].shift = (int)stepShiftSlider.getValue(); }); };
+        stepShiftSlider.onValueChange = [this] {
+            applyScope(scopeShift, [this](int s) { audioProcessor.sequenceData[s].shift = (int)stepShiftSlider.getValue(); });
+            };
 
         updateInspector();
     }
@@ -64,14 +101,24 @@ namespace ChordMatrix {
         if (selectedStep < 0) return;
         int spb = getStepsPerBar();
 
-        if (scopeType == 0) { setterFunction(selectedStep); }
+        if (scopeType == 0) {
+            setterFunction(selectedStep);
+        }
         else if (scopeType == 1) {
             int barStart = (selectedStep / spb) * spb;
-            for (int i = 0; i < spb; ++i) setterFunction(barStart + i);
+            for (int i = 0; i < spb; ++i) {
+                setterFunction(barStart + i);
+            }
         }
-        else { for (int i = 0; i < ChordMatrix::TotalSteps; ++i) setterFunction(i); }
+        else {
+            for (int i = 0; i < ChordMatrix::TotalSteps; ++i) {
+                setterFunction(i);
+            }
+        }
 
-        for (int i = 0; i < ChordMatrix::TotalSteps; ++i) { audioProcessor.previewSequenceData[i] = audioProcessor.sequenceData[i]; }
+        for (int i = 0; i < ChordMatrix::TotalSteps; ++i) {
+            audioProcessor.previewSequenceData[i] = audioProcessor.sequenceData[i];
+        }
 
         if (onSettingsChanged) onSettingsChanged();
         repaint();
@@ -85,6 +132,7 @@ namespace ChordMatrix {
 
     void InspectorComponent::updateInspector() {
         if (selectedStep < 0 || selectedStep >= ChordMatrix::TotalSteps) return;
+
         auto& sData = audioProcessor.sequenceData[selectedStep];
         stepKeyMenu.setSelectedId(sData.keyRoot + 1, juce::dontSendNotification);
         stepScaleMenu.setSelectedId(sData.scaleType + 1, juce::dontSendNotification);
@@ -109,18 +157,23 @@ namespace ChordMatrix {
     int InspectorComponent::getEffectiveStep(int targetS) const {
         int eff = targetS;
         float ppq = getPpqPerStep();
+
         for (int prevS = targetS; prevS >= 0; --prevS) {
             float dist = static_cast<float>(targetS - prevS) * ppq;
             const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
 
-            // 唯一絶対の「音符存在チェック (isActive)」によるカバー判定
+            // ★修正: 唯一絶対の基準「isActive」によるカバー判定
             bool hasNotes = false;
             for (int v = 0; v < 7; ++v) {
-                if (sData.voices[v].isActive) { hasNotes = true; break; }
+                if (sData.voices[v].isActive) {
+                    hasNotes = true;
+                    break;
+                }
             }
 
             if (hasNotes && sData.gateLength > dist + 0.001f) {
-                eff = prevS; break;
+                eff = prevS;
+                break;
             }
         }
         return eff;
@@ -138,10 +191,13 @@ namespace ChordMatrix {
 
     void InspectorComponent::paint(juce::Graphics& g) {
         g.fillAll(juce::Colour(0xff1c1c1c));
+
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();
 
-        g.setColour(juce::Colours::grey); g.setFont(14.0f);
+        g.setColour(juce::Colours::grey);
+        g.setFont(14.0f);
+
         int dispBar = (selectedStep / stepsPerBar) + 1;
         int dispStep = (selectedStep % stepsPerBar) + 1;
         g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 15, 300, 20, juce::Justification::centredLeft);
@@ -152,26 +208,35 @@ namespace ChordMatrix {
             std::array<int, 7> vps = { 0 };
             int effStep = getEffectiveStep(selectedStep);
             int count = VoicingEngine::getVoicedPitches(activeSeqData[effStep], vps);
+
             juce::String noteStr = "";
             for (int i = 0; i < count; ++i) {
                 if (i > 0) noteStr << ", ";
                 noteStr << MusicTheory::getNoteName(vps[i]) << ((vps[i] / 12) - 1);
             }
             if (noteStr.isNotEmpty()) {
-                g.setColour(juce::Colour(0xffffa500)); g.setFont(juce::Font(14.0f, juce::Font::bold));
+                g.setColour(juce::Colour(0xffffa500));
+                g.setFont(juce::Font(14.0f, juce::Font::bold));
                 g.drawFittedText("NOTES:\n" + noteStr, 150, 35, 200, 40, juce::Justification::centredLeft, 2);
             }
         }
 
-        g.setColour(juce::Colours::grey); g.setFont(12.0f);
+        g.setColour(juce::Colours::grey);
+        g.setFont(12.0f);
         g.drawText("BASE SCALE SETTINGS", 20, 95, 180, 20, juce::Justification::centredLeft);
 
         auto drawScopeToggle = [&](int sValue, int x, int y, int w, int h) {
             juce::String txt = (sValue == 0) ? "STEP" : (sValue == 1) ? "BAR" : "ALL";
             juce::Colour c = (sValue == 0) ? juce::Colours::cyan : (sValue == 1) ? juce::Colours::orange : juce::Colours::hotpink;
-            g.setColour(c.withAlpha(0.3f)); g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
-            g.setColour(c); g.drawRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f, 1.0f);
-            g.setColour(juce::Colours::white); g.setFont(11.0f);
+
+            g.setColour(c.withAlpha(0.3f));
+            g.fillRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f);
+
+            g.setColour(c);
+            g.drawRoundedRectangle((float)x, (float)y, (float)w, (float)h, 4.0f, 1.0f);
+
+            g.setColour(juce::Colours::white);
+            g.setFont(11.0f);
             g.drawText(txt, x, y, w, h, juce::Justification::centred);
             };
 
@@ -185,24 +250,33 @@ namespace ChordMatrix {
 
         juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
         juce::Rectangle<int> chordArea(20, 415, 340, 140);
-        g.setColour(juce::Colour(0xff2a2a2a)); g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.6f)); g.drawRoundedRectangle(chordArea.toFloat(), 8.0f, 2.0f);
+
+        g.setColour(juce::Colour(0xff2a2a2a));
+        g.fillRoundedRectangle(chordArea.toFloat(), 8.0f);
+
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.drawRoundedRectangle(chordArea.toFloat(), 8.0f, 2.0f);
+
         juce::Rectangle<int> textArea = chordArea.reduced(10);
 
         if (inspectorChordName.contains("\n")) {
             juce::String part1 = inspectorChordName.upToFirstOccurrenceOf("\n", false, false).trim();
             juce::String part2 = inspectorChordName.fromFirstOccurrenceOf("\n", false, false).replaceCharacter('(', ' ').replaceCharacter(')', ' ').trim();
+
             if (part1.isNotEmpty()) {
-                g.setColour(juce::Colour(0xffffa500)); g.setFont(juce::Font(46.0f, juce::Font::bold));
+                g.setColour(juce::Colour(0xffffa500));
+                g.setFont(juce::Font(46.0f, juce::Font::bold));
                 g.drawFittedText(part1, textArea.removeFromTop(static_cast<int>(textArea.getHeight() * 0.6f)), juce::Justification::centredBottom, 1, 0.2f);
             }
             if (part2.isNotEmpty()) {
-                g.setColour(juce::Colours::white.withAlpha(0.8f)); g.setFont(juce::Font(24.0f, juce::Font::bold));
+                g.setColour(juce::Colours::white.withAlpha(0.8f));
+                g.setFont(juce::Font(24.0f, juce::Font::bold));
                 g.drawFittedText(part2, textArea, juce::Justification::centredTop, 1, 0.2f);
             }
         }
         else if (inspectorChordName.isNotEmpty()) {
-            g.setColour(juce::Colour(0xffffa500)); g.setFont(juce::Font(42.0f, juce::Font::bold));
+            g.setColour(juce::Colour(0xffffa500));
+            g.setFont(juce::Font(42.0f, juce::Font::bold));
             g.drawFittedText(inspectorChordName, textArea, juce::Justification::centred, 2, 0.2f);
         }
     }

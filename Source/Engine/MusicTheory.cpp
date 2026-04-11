@@ -2,92 +2,71 @@
 
 namespace ChordMatrix
 {
-    juce::StringArray MusicTheory::getDegreeNames() {
-        juce::StringArray arr;
-        const char* names[] = { "I", "II", "III", "IV", "V", "VI", "VII" };
-        for (int i = 0; i < 7; ++i) arr.add(juce::String(names[i]));
-        return arr;
+    juce::String MusicTheory::getNoteName(int pitchClass) {
+        const char* names[] = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+        return names[(((pitchClass % 12) + 12) % 12)];
     }
 
-    juce::StringArray MusicTheory::getScaleNames() {
-        juce::StringArray arr;
-        const char* names[] = {
-            "Major (Ionian)", "Natural Minor", "Harmonic Minor", "Melodic Minor",
-            "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian"
+    std::vector<juce::String> MusicTheory::getScaleNames() {
+        return {
+            "Major (Ionian)",
+            "Natural Minor",
+            "Harmonic Minor",
+            "Melodic Minor",
+            "Dorian",
+            "Phrygian",
+            "Lydian",
+            "Mixolydian",
+            "Locrian",
+            "Harmonic Major",
+            "Altered",
+            "Lydian Dominant",
+            "HW Diminished",
+            "Whole Tone"
         };
-        for (int i = 0; i < 9; ++i) arr.add(juce::String(names[i]));
-        return arr;
     }
 
-    std::array<int, 7> MusicTheory::getScaleIntervals(int scaleType) {
-        int safeType = juce::jlimit(0, 8, scaleType);
-        switch (safeType) {
-        case 0: return { 0, 2, 4, 5, 7, 9, 11 };
-        case 1: return { 0, 2, 3, 5, 7, 8, 10 };
-        case 2: return { 0, 2, 3, 5, 7, 8, 11 };
-        case 3: return { 0, 2, 3, 5, 7, 9, 11 };
-        case 4: return { 0, 2, 3, 5, 7, 9, 10 };
-        case 5: return { 0, 1, 3, 5, 7, 8, 10 };
-        case 6: return { 0, 2, 4, 6, 7, 9, 11 };
-        case 7: return { 0, 2, 4, 5, 7, 9, 10 };
-        case 8: return { 0, 1, 3, 5, 6, 8, 10 };
+    std::vector<int> MusicTheory::getScaleIntervals(int scaleType) {
+        switch (scaleType) {
+        case 0: return { 0, 2, 4, 5, 7, 9, 11 }; // Major
+        case 1: return { 0, 2, 3, 5, 7, 8, 10 }; // Natural Minor
+        case 2: return { 0, 2, 3, 5, 7, 8, 11 }; // Harmonic Minor
+        case 3: return { 0, 2, 3, 5, 7, 9, 11 }; // Melodic Minor
+        case 4: return { 0, 2, 3, 5, 7, 9, 10 }; // Dorian
+        case 5: return { 0, 1, 3, 5, 7, 8, 10 }; // Phrygian
+        case 6: return { 0, 2, 4, 6, 7, 9, 11 }; // Lydian
+        case 7: return { 0, 2, 4, 5, 7, 9, 10 }; // Mixolydian
+        case 8: return { 0, 1, 3, 5, 6, 8, 10 }; // Locrian
+        case 9: return { 0, 2, 4, 5, 7, 8, 11 }; // Harmonic Major
+        case 10: return { 0, 1, 3, 4, 6, 8, 10 }; // Altered (Super Locrian)
+        case 11: return { 0, 2, 4, 6, 7, 9, 10 }; // Lydian Dominant
+        case 12: return { 0, 1, 3, 4, 6, 7, 9 };  // HW Diminished
+        case 13: return { 0, 2, 4, 6, 8, 10, 12 }; // Whole Tone
         default: return { 0, 2, 4, 5, 7, 9, 11 };
         }
     }
 
-    juce::String MusicTheory::getNoteName(int n) {
-        static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        int index = n % 12;
-        if (index < 0) index += 12;
-        return juce::String(names[juce::jlimit(0, 11, index)]);
+    std::vector<juce::String> MusicTheory::getDegreeNames() {
+        return { "I", "II", "III", "IV", "V", "VI", "VII" };
     }
 
-    int MusicTheory::getBasePitch(const StepData& step, int voiceIndex) {
-        auto scale = getScaleIntervals(step.scaleType);
-        int baseRoot = 60 + step.keyRoot;
-        int degreeIndex = juce::jlimit(0, 6, step.chordDegree);
-        int scaleIndex = (degreeIndex + voiceIndex * 2) % 7;
-        int octaveOffset = (degreeIndex + voiceIndex * 2) / 7;
-        return baseRoot + scale[scaleIndex] + (octaveOffset * 12) + step.shift;
-    }
+    int MusicTheory::getBasePitch(const StepData& step, int voiceIdx) {
+        auto intervals = getScaleIntervals(step.scaleType);
+        int rootPitch = 60 + step.keyRoot; // C4 Base
 
-    // ★追加: 転調ロジックの土台。Targetへ向けて直前の小節にV7(ドミナント)を自動挿入する。
-    void MusicTheory::applyModulation(const std::array<StepData, TotalSteps>& source,
-        std::array<StepData, TotalSteps>& dest,
-        int targetBar, int targetKey, int targetScale, int method, int stepsPerBar)
-    {
-        // 1. まず元のシーケンスをすべてコピー（非破壊）
-        dest = source;
+        int offsetDegrees = 0;
+        if (voiceIdx == 0) offsetDegrees = 0;
+        else if (voiceIdx == 1) offsetDegrees = 2;  // 3rd
+        else if (voiceIdx == 2) offsetDegrees = 4;  // 5th
+        else if (voiceIdx == 3) offsetDegrees = 6;  // 7th
+        else if (voiceIdx == 4) offsetDegrees = 8;  // 9th
+        else if (voiceIdx == 5) offsetDegrees = 10; // 11th
+        else if (voiceIdx == 6) offsetDegrees = 12; // 13th
 
-        // TargetBarが不正な場合は処理しない（Bar1への転調は前小節がないためスキップ）
-        if (targetBar <= 0 || targetBar >= MaxBars) return;
+        int totalDegrees = step.chordDegree + offsetDegrees;
+        int octaves = totalDegrees / 7;
+        int scaleDegree = totalDegrees % 7;
 
-        // 2. ターゲット小節(Bar)の頭のコードを、指定されたKeyとScaleに書き換える
-        int targetStepStart = targetBar * stepsPerBar;
-        for (int i = 0; i < stepsPerBar; ++i) {
-            dest[targetStepStart + i].keyRoot = targetKey;
-            dest[targetStepStart + i].scaleType = targetScale;
-        }
-
-        // 3. 直前の小節(Bar - 1)の後半に、ターゲットに対する「V7(ドミナント)」のコードを挿入する
-        int prevBar = targetBar - 1;
-        int prevStepStart = prevBar * stepsPerBar;
-        int halfBar = stepsPerBar / 2;
-
-        for (int i = halfBar; i < stepsPerBar; ++i) {
-            int s = prevStepStart + i;
-            dest[s].keyRoot = targetKey;
-            dest[s].scaleType = 0;   // V7をシンプルに表現するためメジャースケール基準に設定
-            dest[s].chordDegree = 4; // V (ドミナント)
-
-            for (int v = 0; v < 7; ++v) {
-                // 7thコードを鳴らすため、Root(6), 3rd(4), 5th(2), 7th(0) をアクティブにする
-                dest[s].voices[v].isActive = (v == 6 || v == 4 || v == 2 || v == 0);
-                dest[s].voices[v].octaveShift = 0;
-                dest[s].voices[v].accidental = 0;
-            }
-            dest[s].voicingMode = 0; // Close Voicing
-            dest[s].gateLength = 0.25f; // 安全なゲート長をセット
-        }
+        return rootPitch + intervals[scaleDegree] + (octaves * 12);
     }
 }

@@ -8,7 +8,6 @@ namespace ChordMatrix
     class VoicingEngine
     {
     public:
-        // 自動生成パターン（Rootless, UST, Quartal等）か、手動配置パターン（Drop, Block等）かを判定
         static bool isAutoPattern(int voicingMode);
 
         static int getVoicedPitches(const StepData& step, std::array<int, 7>& outPitches);

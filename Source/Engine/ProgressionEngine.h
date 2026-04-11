@@ -28,7 +28,6 @@ namespace ChordMatrix
     class ProgressionEngine
     {
     public:
-        // 転調・アプローチアルゴリズム（15種類に拡張）
         enum ModulationMethod {
             DirectDominant = 0,
             TwoFiveOne = 1,
@@ -39,12 +38,15 @@ namespace ChordMatrix
             SecondaryDominant = 6,
             DoubleTwoFive = 7,
             ColtraneApproach = 8,
-            ExtendedDominant = 9,      // V7/V/V -> V7/V -> V7
-            ChromaticApproachUp = 10,  // 半音下からのアプローチ
-            ChromaticApproachDown = 11,// 半音上からのアプローチ
-            DeceptiveCadence = 12,     // 偽終止アプローチ
-            ConstantStructure = 13,    // 同形進行（平行移動）
-            PedalPointApproach = 14    // ベース保留アプローチ
+            ExtendedDominant = 9,
+            ChromaticApproachUp = 10,
+            ChromaticApproachDown = 11,
+            DeceptiveCadence = 12,
+            ConstantStructure = 13,
+            PedalPointApproach = 14,
+            NeoRiemannianP = 15,
+            NeoRiemannianL = 16,
+            NeoRiemannianR = 17
         };
 
         static void applyModulation(const std::array<StepData, TotalSteps>& source,
@@ -52,11 +54,8 @@ namespace ChordMatrix
             int targetBar, int targetKey, int targetScale, int method,
             int stepsPerBar, int stepsPerBeat, float ppqPerStep);
 
-        // ジャズ、ポップス、クラシックの100種類以上の進行を網羅した辞書
         static const std::vector<ProgressionPreset>& getProgressionDictionary();
         static juce::StringArray getModulationNames();
-
-        // AIサジェスション機能への布石（機能和声的推論）
         static std::vector<int> suggestNextChords(int currentDegree, int scaleType);
     };
 }
