@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
-#include <map>
 
 namespace ChordMatrix
 {
@@ -457,12 +456,13 @@ namespace ChordMatrix
 
         int maxInv = autoPat ? 1 : 7; // オートパターンの場合はインバージョン不要
 
-        // ★注意: ご要望に基づき「shift」は絶対に変更せず、インバージョンとボイシングモードのみを探索する
+        // ★修正: 「shift」および各voiceの「octaveShift」は一切変更せず、転回形とA/Bモードのみを探索する
         for (int mode : modesToTry) {
             for (int inv = 0; inv < maxInv; ++inv) {
                 Candidate c;
                 c.voicingMode = mode;
                 c.inversion = inv;
+                c.cost = 0.0f;
                 candidates.push_back(c);
             }
         }
@@ -480,12 +480,11 @@ namespace ChordMatrix
             StepData testStep = baseStep;
             testStep.voicingMode = c.voicingMode;
             testStep.inversion = c.inversion;
-            // shiftは元のまま維持される
+            // shiftは元の値を維持
 
             std::array<int, 7> testPitches = { 0 };
             int testCount = getVoicedPitches(testStep, testPitches);
 
-            c.cost = 0.0f;
             if (testCount == 0) { c.cost = 999999.0f; continue; }
 
             // ① L1ノルム (Taxicab Metric) + L∞ノルム (Chebyshev Metric)
@@ -578,7 +577,6 @@ namespace ChordMatrix
 
             seq[targetStep].voicingMode = best.voicingMode;
             seq[targetStep].inversion = best.inversion;
-            // Shiftの変更コードは完全に削除されました
         }
     }
 }
