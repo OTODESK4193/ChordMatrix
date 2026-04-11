@@ -15,7 +15,9 @@ namespace ChordMatrix
     int VoicingEngine::getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches) {
         int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
 
+        // =====================================================================
         // UST ボイシング (Upper Structure Triads)
+        // =====================================================================
         if (step.voicingMode == 6 || step.voicingMode == 7 || (step.voicingMode >= 16 && step.voicingMode <= 19)) {
             int ustRootOffset = 0;
             if (step.voicingMode == 6) ustRootOffset = 1;
@@ -38,7 +40,9 @@ namespace ChordMatrix
             outPitches[5] = ustBase + 7 + step.voices[5].accidental;
             return 6;
         }
-        // ★新規実装: スケール完全追従型 ルートレス・ボイシング (Type A / Type B)
+        // =====================================================================
+        // スケール完全追従型 ルートレス・ボイシング (Type A / Type B)
+        // =====================================================================
         else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
             // 現在のスケールに基づく正確なDiatonic Pitchを取得
@@ -58,14 +62,14 @@ namespace ChordMatrix
 
             int n1, n2, n3, n4;
             if (isDom) {
-                // 資料 3.2: ドミナントでは5thを13th（またはスケール固有のb13等）に置換し緊張を高める
+                // ドミナントでは5thを13th（またはスケール固有のb13等）に置換し緊張を高める
                 n1 = p3;
                 n2 = p13;
                 n3 = p7;
                 n4 = p9;
             }
             else if (isHalfDim) {
-                // 資料 3.4: ハーフディミニッシュではb9の衝突を避けるため、9thの代わりにルートを採用
+                // ハーフディミニッシュではb9の衝突を避けるため、9thの代わりにルートを採用
                 n1 = p3;
                 n2 = p5;
                 n3 = p7;
@@ -85,13 +89,15 @@ namespace ChordMatrix
             n3 = n2 + (((n3 - n2) % 12) + 12) % 12; if (n3 == n2) n3 += 12;
             n4 = n3 + (((n4 - n3) % 12) + 12) % 12; if (n4 == n3) n4 += 12;
 
-            if (step.voicingMode == 4) { // Type A (3rd最下音)
+            if (step.voicingMode == 4) {
+                // Type A (3rd最下音)
                 outPitches[0] = n1 + step.voices[0].accidental;
                 outPitches[1] = n2 + step.voices[1].accidental;
                 outPitches[2] = n3 + step.voices[2].accidental;
                 outPitches[3] = n4 + step.voices[3].accidental;
             }
-            else { // Type B (7th最下音、上部2音を下へ)
+            else {
+                // Type B (7th最下音、上部2音を1オクターブ下へ配置)
                 outPitches[0] = n3 - 12 + step.voices[0].accidental;
                 outPitches[1] = n4 - 12 + step.voices[1].accidental;
                 outPitches[2] = n1 + step.voices[2].accidental;
@@ -99,7 +105,9 @@ namespace ChordMatrix
             }
             return 4;
         }
-        // ★新規実装: スケール追従型 Quartal ボイシング
+        // =====================================================================
+        // スケール追従型 Quartal ボイシング
+        // =====================================================================
         else if (step.voicingMode == 8) {
             int r = rootPitch;
             // Diatonic 4ths をスケールから抽出 (Root, 11th, 7th, 3rd)
@@ -118,14 +126,18 @@ namespace ChordMatrix
             outPitches[3] = n4 + step.voices[3].accidental;
             return 4;
         }
-        // Shell (1-3-7) は既にスケール追従済み
+        // =====================================================================
+        // Shell (1-3-7)
+        // =====================================================================
         else if (step.voicingMode == 9) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 1) + step.voices[1].accidental;
             outPitches[2] = MusicTheory::getBasePitch(step, 3) + step.voices[3].accidental;
             return 3;
         }
-        // ★新規実装: スケール追従型 So What ボイシング
+        // =====================================================================
+        // スケール追従型 So What ボイシング
+        // =====================================================================
         else if (step.voicingMode == 12) {
             // Diatonic: Root, 11th, 7th, 3rd, 5th
             outPitches[0] = rootPitch + step.voices[0].accidental;
@@ -137,6 +149,9 @@ namespace ChordMatrix
             std::sort(outPitches.begin(), outPitches.begin() + 5);
             return 5;
         }
+        // =====================================================================
+        // Cluster (2nds)
+        // =====================================================================
         else if (step.voicingMode == 13) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 2 + step.voices[1].accidental;
@@ -144,6 +159,9 @@ namespace ChordMatrix
             outPitches[3] = rootPitch + 7 + step.voices[3].accidental;
             return 4;
         }
+        // =====================================================================
+        // Kenny Barron (Min11ths)
+        // =====================================================================
         else if (step.voicingMode == 14) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 7 + step.voices[1].accidental;
@@ -180,12 +198,14 @@ namespace ChordMatrix
 
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
+        // インバージョン処理
         int inv = step.inversion % count;
         for (int i = 0; i < inv; ++i) {
             outPitches[i] += 12;
         }
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
+        // ドロップおよびスプレッド処理
         if (step.voicingMode == 1 && count >= 4) {
             outPitches[count - 2] -= 12;
             std::sort(outPitches.begin(), outPitches.begin() + count);
@@ -415,123 +435,126 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
-    void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep) {
-        if (isAutoPattern(seq[targetStep].voicingMode)) return;
-
+    // =========================================================================
+    // ★AI最適化エンジン: 複数の候補をシミュレーションして多目的コスト関数で評価
+    // =========================================================================
+    void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
         int prevActiveStep = -1;
         for (int s = targetStep - 1; s >= 0; --s) {
             bool hasActive = false;
             for (int v = 0; v < NumVoices; ++v) {
-                if (seq[s].voices[v].isActive) {
-                    hasActive = true;
-                    break;
-                }
+                if (seq[s].voices[v].isActive) { hasActive = true; break; }
             }
-            if (hasActive) {
-                prevActiveStep = s;
-                break;
-            }
+            if (hasActive) { prevActiveStep = s; break; }
         }
 
-        if (prevActiveStep < 0) return;
+        if (prevActiveStep < 0) return; // 前にコードがない場合はスキップ
 
-        std::vector<int> prevPitches;
-        for (int pv = 0; pv < NumVoices; ++pv) {
-            if (seq[prevActiveStep].voices[pv].isActive) {
-                prevPitches.push_back(MusicTheory::getBasePitch(seq[prevActiveStep], pv) +
-                    seq[prevActiveStep].voices[pv].accidental +
-                    (seq[prevActiveStep].voices[pv].octaveShift * 12) +
-                    seq[prevActiveStep].shift);
-            }
+        std::array<int, 7> prevPitches = { 0 };
+        int prevCount = getVoicedPitches(seq[prevActiveStep], prevPitches);
+        if (prevCount == 0) return;
+
+        // 評価用候補構造体
+        struct Candidate {
+            int voicingMode;
+            int inversion;
+            int shift;
+            float cost;
+        };
+        std::vector<Candidate> candidates;
+
+        StepData baseStep = seq[targetStep];
+        bool autoPat = isAutoPattern(baseStep.voicingMode);
+
+        std::vector<int> modesToTry;
+        // ルートレスの場合はA/B両方を試行して滑らかな方を自動採用する
+        if (baseStep.voicingMode == 4 || baseStep.voicingMode == 5) {
+            modesToTry = { 4, 5 };
+        }
+        else {
+            modesToTry = { baseStep.voicingMode };
         }
 
-        int prevRoot = MusicTheory::getBasePitch(seq[prevActiveStep], 0) + seq[prevActiveStep].voices[0].accidental + (seq[prevActiveStep].voices[0].octaveShift * 12) + seq[prevActiveStep].shift;
-        int currRoot = MusicTheory::getBasePitch(seq[targetStep], 0) + seq[targetStep].voices[0].accidental + seq[targetStep].shift;
-        bool isBassCliche = (std::abs(currRoot - prevRoot) == 1 || std::abs(currRoot - prevRoot) == 2);
+        // オートパターンの場合はインバージョンは無効なので1回、手動の場合は7回試行
+        int maxInv = autoPat ? 1 : 7;
 
-        for (int v = 0; v < NumVoices; ++v) {
-            if (seq[targetStep].voices[v].isActive) {
-                int basePitch = MusicTheory::getBasePitch(seq[targetStep], v) +
-                    seq[targetStep].voices[v].accidental +
-                    seq[targetStep].shift;
-
-                int bestOct = seq[targetStep].voices[v].octaveShift;
-                float lowestCost = 999999.0f;
-
+        // あらゆるオクターブ・転回形・フォームの組み合わせを生成
+        for (int mode : modesToTry) {
+            for (int inv = 0; inv < maxInv; ++inv) {
                 for (int oct = -2; oct <= 2; ++oct) {
-                    int testPitch = basePitch + oct * 12;
-                    float cost = 0.0f;
+                    Candidate c;
+                    c.voicingMode = mode;
+                    c.inversion = inv;
+                    c.shift = oct * 12; // 全体のシフト量で上下させる
+                    candidates.push_back(c);
+                }
+            }
+        }
 
-                    // L1ノルム (Taxicab metric)
-                    int minDist = 9999;
-                    for (int pPitch : prevPitches) {
-                        int dist = std::abs(pPitch - testPitch);
-                        if (dist < minDist) minDist = dist;
-                    }
-                    cost += static_cast<float>(minDist);
+        // 各候補のコスト（ペナルティ）を計算
+        for (auto& c : candidates) {
+            StepData testStep = baseStep;
+            testStep.voicingMode = c.voicingMode;
+            testStep.inversion = c.inversion;
+            testStep.shift = c.shift;
 
-                    // L∞ノルム (Chebyshev metric) : 一定以上の跳躍は極端なペナルティ
-                    if (minDist > 4) {
-                        cost += static_cast<float>(minDist - 4) * 2.5f;
-                    }
+            std::array<int, 7> testPitches = { 0 };
+            int testCount = getVoicedPitches(testStep, testPitches);
 
-                    if (minDist == 0) cost -= 3.0f;
-                    else if (minDist == 1) cost -= 1.5f;
-                    else if (minDist == 2) cost -= 0.5f;
+            c.cost = 0.0f;
+            if (testCount == 0) { c.cost = 999999.0f; continue; }
 
-                    if (isBassCliche && v == 1 && minDist > 0) {
-                        cost += 100.0f;
-                    }
+            // ① ボイスリーディングの滑らかさ (L1ノルム距離の総和)
+            float voiceLeadingCost = 0.0f;
+            for (int i = 0; i < testCount; ++i) {
+                int minDist = 9999;
+                for (int j = 0; j < prevCount; ++j) {
+                    int dist = std::abs(testPitches[i] - prevPitches[j]);
+                    if (dist < minDist) minDist = dist;
+                }
+                voiceLeadingCost += static_cast<float>(minDist);
+            }
+            c.cost += voiceLeadingCost;
 
-                    if (v == 0) cost -= static_cast<float>(minDist) * 0.5f;
+            // ② 親指の法則 (Highest note around Middle C to G5: 60 ~ 79)
+            int highestPitch = testPitches[testCount - 1];
+            if (highestPitch > 79) c.cost += static_cast<float>(highestPitch - 79) * 5.0f; // 高すぎるのは致命的ペナルティ
+            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 2.0f; // 低いのもペナルティ
 
-                    // 平行5度・平行8度禁止
-                    for (int v_prev = 0; v_prev < v; ++v_prev) {
-                        if (seq[targetStep].voices[v_prev].isActive && seq[prevActiveStep].voices[v_prev].isActive && seq[prevActiveStep].voices[v].isActive)
-                        {
-                            int currP1 = MusicTheory::getBasePitch(seq[targetStep], v_prev) + seq[targetStep].voices[v_prev].accidental + (seq[targetStep].voices[v_prev].octaveShift * 12) + seq[targetStep].shift;
-                            int currP2 = testPitch;
-                            int prevP1 = MusicTheory::getBasePitch(seq[prevActiveStep], v_prev) + seq[prevActiveStep].voices[v_prev].accidental + (seq[prevActiveStep].voices[v_prev].octaveShift * 12) + seq[prevActiveStep].shift;
-                            int pP2 = MusicTheory::getBasePitch(seq[prevActiveStep], v) + seq[prevActiveStep].voices[v].accidental + (seq[prevActiveStep].voices[v].octaveShift * 12) + seq[prevActiveStep].shift;
+            // ③ Low Interval Limit (低音域の濁り防止)
+            int lowestPitch = testPitches[0];
+            if (lowestPitch < 40) c.cost += static_cast<float>(40 - lowestPitch) * 3.0f;
+        }
 
-                            int prevInt = std::abs(pP2 - prevP1) % 12;
-                            int currInt = std::abs(currP2 - currP1) % 12;
+        // コストが低い順（最適解順）にソート
+        std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+            return a.cost < b.cost;
+            });
 
-                            if ((currP1 - prevP1) == (currP2 - pP2) && currP1 != prevP1) {
-                                if (prevInt == 7 && currInt == 7) cost += 50.0f;
-                                if (prevInt == 0 && currInt == 0) cost += 50.0f;
-                            }
-                        }
-                    }
-
-                    bool isDominantResolution = (seq[prevActiveStep].chordDegree == 4 && (seq[targetStep].chordDegree == 0 || seq[targetStep].chordDegree == 5));
-                    if (isDominantResolution) {
-                        int pP2 = MusicTheory::getBasePitch(seq[prevActiveStep], v) + seq[prevActiveStep].voices[v].accidental + (seq[prevActiveStep].voices[v].octaveShift * 12) + seq[prevActiveStep].shift;
-                        int leadingToneClass = (((seq[prevActiveStep].keyRoot + seq[prevActiveStep].shift) % 12) + 11) % 12;
-
-                        if ((((pP2 % 12) + 12) % 12) == leadingToneClass) {
-                            if (testPitch == pP2 + 1) cost -= 15.0f;
-                            else cost += 30.0f;
-                        }
-                    }
-
-                    // Low Interval Limit (濁り防止)
-                    if (v == 0) {
-                        if (testPitch < 36) cost += static_cast<float>(36 - testPitch) * 2.0f;
-                    }
-                    else {
-                        if (testPitch < 48) cost += static_cast<float>(48 - testPitch) * 5.0f;
-                    }
-                    if (testPitch > 84) cost += static_cast<float>(testPitch - 84) * 2.0f;
-
-                    if (cost < lowestCost) {
-                        lowestCost = cost;
-                        bestOct = oct;
+        if (!candidates.empty()) {
+            // 重複する結果を除外して、クリックするたびに確実に違うフォームが出るようにする
+            std::vector<Candidate> uniqueCandidates;
+            uniqueCandidates.push_back(candidates[0]);
+            for (size_t i = 1; i < candidates.size(); ++i) {
+                bool isUnique = true;
+                for (const auto& uc : uniqueCandidates) {
+                    // 全く同じ配置なら除外
+                    if (candidates[i].voicingMode == uc.voicingMode &&
+                        candidates[i].inversion == uc.inversion &&
+                        candidates[i].shift == uc.shift) {
+                        isUnique = false; break;
                     }
                 }
-
-                seq[targetStep].voices[v].octaveShift = static_cast<int8_t>(bestOct);
+                if (isUnique) uniqueCandidates.push_back(candidates[i]);
             }
+
+            // altIndex を利用してランキングのN位の解を適用する
+            int selectedIdx = altIndex % uniqueCandidates.size();
+            auto& best = uniqueCandidates[selectedIdx];
+
+            seq[targetStep].voicingMode = best.voicingMode;
+            seq[targetStep].inversion = best.inversion;
+            seq[targetStep].shift = best.shift;
         }
     }
 }

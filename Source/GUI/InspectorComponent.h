@@ -30,8 +30,14 @@ namespace ChordMatrix {
 
         juce::TextButton btnOptimize{ "OPTIMIZE" };
 
+        // ------------------------------------------------------------
+        // 変更箇所 (InspectorComponent.h の private: 内)
+        // ------------------------------------------------------------
         int selectedStep = 0;
         int scopeKey = 0, scopeScale = 0, scopeDegree = 0, scopeVoicing = 0, scopeOptimize = 0, scopeShift = 0;
+
+        // ★新規追加: OPTIMIZEボタンを押すたびにインクリメントされる代替案インデックス
+        int optimizeAltIndex = 0;
 
         void updateInspector();
         int getStepsPerBar() const;
