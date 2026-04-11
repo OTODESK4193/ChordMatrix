@@ -45,26 +45,28 @@ namespace ChordMatrix {
             };
 
         setupCombo(voicingMenu, voicingLabel);
-        // ★修正: 論文に基づく拡張を含めた全19種類のボイシングを登録
-        voicingMenu.addItem("Close", 1);
-        voicingMenu.addItem("Drop 2", 2);
-        voicingMenu.addItem("Spread", 3);
-        voicingMenu.addItem("Rootless A", 4);
-        voicingMenu.addItem("Rootless B", 5);
-        voicingMenu.addItem("UST (bII)", 6);
-        voicingMenu.addItem("UST (bVI)", 7);
-        voicingMenu.addItem("Quartal (4ths)", 8);
-        voicingMenu.addItem("Shell (1-3-7)", 9);
-        voicingMenu.addItem("Drop 2 & 4", 10);
-        voicingMenu.addItem("Drop 2 & 3", 11);
-        voicingMenu.addItem("So What (m11)", 12);
-        voicingMenu.addItem("Cluster (2nds)", 13);
-        voicingMenu.addItem("Kenny Barron", 14);
-        voicingMenu.addItem("Block Chords", 15);
-        voicingMenu.addItem("UST (bIII)", 16);
-        voicingMenu.addItem("UST (bV)", 17);
-        voicingMenu.addItem("UST (VI)", 18);
-        voicingMenu.addItem("UST (II)", 19);
+
+        // ★修正: Drop 3 を復活させ、全20種類のIDをエンジンと完全に同期
+        voicingMenu.addItem("Close", 1);           // ID: 0
+        voicingMenu.addItem("Drop 2", 2);          // ID: 1
+        voicingMenu.addItem("Drop 3", 3);          // ID: 2 (★抜けていた箇所)
+        voicingMenu.addItem("Spread", 4);          // ID: 3
+        voicingMenu.addItem("Rootless A", 5);      // ID: 4
+        voicingMenu.addItem("Rootless B", 6);      // ID: 5
+        voicingMenu.addItem("UST (bII)", 7);       // ID: 6
+        voicingMenu.addItem("UST (bVI)", 8);       // ID: 7
+        voicingMenu.addItem("Quartal (4ths)", 9);  // ID: 8
+        voicingMenu.addItem("Shell (1-3-7)", 10);  // ID: 9
+        voicingMenu.addItem("Drop 2 & 4", 11);     // ID: 10
+        voicingMenu.addItem("Drop 2 & 3", 12);     // ID: 11
+        voicingMenu.addItem("So What (m11)", 13);  // ID: 12
+        voicingMenu.addItem("Cluster (2nds)", 14); // ID: 13
+        voicingMenu.addItem("Kenny Barron", 15);   // ID: 14
+        voicingMenu.addItem("Block Chords", 16);   // ID: 15
+        voicingMenu.addItem("UST (bIII)", 17);     // ID: 16
+        voicingMenu.addItem("UST (bV)", 18);       // ID: 17
+        voicingMenu.addItem("UST (VI)", 19);       // ID: 18
+        voicingMenu.addItem("UST (II)", 20);       // ID: 19
 
         voicingMenu.onChange = [this] {
             applyScope(scopeVoicing, [this](int s) { audioProcessor.sequenceData[s].voicingMode = voicingMenu.getSelectedId() - 1; });
@@ -162,7 +164,6 @@ namespace ChordMatrix {
             float dist = static_cast<float>(targetS - prevS) * ppq;
             const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
 
-            // ★修正: 唯一絶対の基準「isActive」によるカバー判定
             bool hasNotes = false;
             for (int v = 0; v < 7; ++v) {
                 if (sData.voices[v].isActive) {
