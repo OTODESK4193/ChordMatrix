@@ -20,13 +20,13 @@ namespace ChordMatrix {
         progressionBrowser.onApplyPreset = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
-            resized(); // ★先祖返りで消えていた修正を復活。提案パネルを確実に再表示させます。
+            resized();
             if (onRepaintRequest) onRepaintRequest();
             };
         progressionBrowser.onCancel = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
-            resized(); // ★ここにも復活。
+            resized();
             repaint();
             };
         progressionBrowser.setVisible(false);
@@ -145,7 +145,7 @@ namespace ChordMatrix {
     void MatrixGridComponent::setProgressionMode(bool isProg) {
         isProgressionMode = isProg;
         progressionBrowser.setVisible(isProgressionMode);
-        resized(); // ★念のためここにも追加して、モード切り替え時のUIレイアウト更新を徹底します
+        resized();
         repaint();
     }
 
@@ -232,7 +232,6 @@ namespace ChordMatrix {
 
         progressionBrowser.setBounds(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f);
 
-        // ★UIレイアウトの司令塔: ここで「提案パネルを出すべきか」が判定されています
         bool showSuggest = !isModulationPanelOpen && !isProgressionMode && !isMemoryModeOpen;
         suggestionPanel.setVisible(showSuggest);
         suggestionPanel.setBounds(leftMargin, 625.0f, seqTotalWidth, 150.0f);
@@ -338,7 +337,6 @@ namespace ChordMatrix {
 
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
 
-        // 空グリッド背景の描画
         for (int s = 0; s < uiStepsPerBar; ++s) {
             for (int v = 0; v < 7; ++v) {
                 auto bounds = getCellBounds(s, v, stepW).reduced(1.0f, 1.0f);
@@ -353,7 +351,6 @@ namespace ChordMatrix {
             g.drawLine(leftMargin + static_cast<float>(s) * stepW, 155.0f - 5.0f, leftMargin + static_cast<float>(s) * stepW, 155.0f + (8.0f * cellHeight), (s % uiStepsPerBeat == 0) ? 2.0f : 1.0f);
         }
 
-        // ノートおよびヘッダー・フッターの描画
         for (int s = 0; s < uiStepsPerBar; ) {
             int internalS = getInternalStep(editBar, s);
             int effS = getEffectiveStep(internalS);
@@ -630,6 +627,12 @@ namespace ChordMatrix {
             if (getBarButtonBounds(i).contains(e.position)) {
                 if (e.mods.isLeftButtonDown()) {
                     audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(i) / 15.0f);
+
+                    // ★追加: Barボタンを押した瞬間に、そのBarの先頭へフォーカス(selectedStep)を移動させる
+                    selectedStep = i * internalStepsPerBar;
+                    suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), internalStepsPerBar);
+                    if (onStepSelected) onStepSelected(selectedStep);
+
                     if (onRepaintRequest) onRepaintRequest();
                 }
                 else if (e.mods.isRightButtonDown()) {

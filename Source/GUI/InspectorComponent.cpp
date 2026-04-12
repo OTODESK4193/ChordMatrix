@@ -77,7 +77,8 @@ namespace ChordMatrix {
         btnOptimize.onClick = [this] {
             optimizeAltIndex++;
             applyScope(scopeOptimize, [this](int s) {
-                VoicingEngine::optimizeStep(audioProcessor.sequenceData, s, getPpqPerStep(), optimizeAltIndex);
+                // ★修正: 最適化エンジンには常に内部解像度(0.25 PPQ)を渡して分析させる
+                VoicingEngine::optimizeStep(audioProcessor.sequenceData, s, 0.25f, optimizeAltIndex);
                 });
             };
 
@@ -103,7 +104,9 @@ namespace ChordMatrix {
 
     void InspectorComponent::applyScope(int scopeType, std::function<void(int)> setterFunction) {
         if (selectedStep < 0) return;
-        int spb = getStepsPerBar();
+
+        // ★修正: 内部解像度に基づく正確な1小節のステップ数（4/4なら常に16）を取得
+        int internalSpb = getStepsPerBar();
 
         auto safeSetter = [this, setterFunction](int s) {
             if (!audioProcessor.sequenceData[s].isLocked) {
@@ -115,8 +118,9 @@ namespace ChordMatrix {
             safeSetter(selectedStep);
         }
         else if (scopeType == 1) {
-            int barStart = static_cast<int>(selectedStep / spb) * spb;
-            for (int i = 0; i < spb; ++i) {
+            // ★修正: 選択ステップが属する小節の先頭インデックスを計算し、16回ループで全コードを書き換える
+            int barStart = static_cast<int>(selectedStep / internalSpb) * internalSpb;
+            for (int i = 0; i < internalSpb; ++i) {
                 safeSetter(barStart + i);
             }
         }
@@ -134,9 +138,6 @@ namespace ChordMatrix {
         repaint();
     }
 
-    // =====================================================================
-    // ★重要: エラーの根本原因だったこの関数が欠落しないようご注意ください
-    // =====================================================================
     void InspectorComponent::setSelectedStep(int stepIndex) {
         selectedStep = stepIndex;
         updateInspector();
@@ -154,12 +155,15 @@ namespace ChordMatrix {
         stepShiftSlider.setValue(sData.shift, juce::dontSendNotification);
     }
 
+    // =========================================================================
+    // ★バグの元凶修正: 内部解像度(0.25 PPQ固定)における1小節のステップ数を返すように完全固定
+    // =========================================================================
     int InspectorComponent::getStepsPerBar() const {
         int tsNum = (int)*audioProcessor.apvts.getRawParameterValue("timeSigNum");
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-        float ppqPerStep = getPpqPerStep();
-        return std::max(1, juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep));
+        float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
+        return std::max(1, juce::roundToInt(beatsPerBar / 0.25f));
     }
 
     float InspectorComponent::getPpqPerStep() const {
@@ -169,10 +173,9 @@ namespace ChordMatrix {
 
     int InspectorComponent::getEffectiveStep(int targetS) const {
         int eff = targetS;
-        float ppq = getPpqPerStep();
-
         for (int prevS = targetS; prevS >= 0; --prevS) {
-            float dist = static_cast<float>(targetS - prevS) * ppq;
+            // ★修正: 内部解像度(0.25f)で距離を正確に計算する
+            float dist = static_cast<float>(targetS - prevS) * 0.25f;
             const auto& sData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData[prevS] : audioProcessor.sequenceData[prevS];
 
             bool hasNotes = false;
@@ -204,14 +207,17 @@ namespace ChordMatrix {
     void InspectorComponent::paint(juce::Graphics& g) {
         g.fillAll(juce::Colour(0xff1c1c1c));
 
-        int stepsPerBar = getStepsPerBar();
-        float ppqPerStep = getPpqPerStep();
+        int internalStepsPerBar = getStepsPerBar();
+        float uiPpqPerStep = getPpqPerStep();
 
         g.setColour(juce::Colours::grey);
         g.setFont(14.0f);
 
-        int dispBar = (selectedStep / stepsPerBar) + 1;
-        int dispStep = (selectedStep % stepsPerBar) + 1;
+        int dispBar = (selectedStep / internalStepsPerBar) + 1;
+        // ★修正: 内部の16ステップをUIの4ステップ表示に正確に逆変換する
+        int internalStepMultiplier = juce::roundToInt(uiPpqPerStep / 0.25f);
+        int dispStep = ((selectedStep % internalStepsPerBar) / internalStepMultiplier) + 1;
+
         g.drawText("BAR " + juce::String(dispBar) + " / STEP " + juce::String(dispStep), 20, 15, 300, 20, juce::Justification::centredLeft);
 
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
@@ -273,7 +279,8 @@ namespace ChordMatrix {
         drawScopeToggle(scopeOptimize, toggleX, 305, toggleW, 30);
         drawScopeToggle(scopeShift, toggleX, 350, toggleW, 30);
 
-        juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, ppqPerStep);
+        // ★修正: コード解析にも内部解像度(0.25 PPQ)を渡す
+        juce::String inspectorChordName = VoicingEngine::getRecognizedChordName(activeSeqData, selectedStep, 0.25f);
 
         juce::Rectangle<int> chordArea(20, 415, 340, 120);
         g.setColour(juce::Colour(0xff2a2a2a));

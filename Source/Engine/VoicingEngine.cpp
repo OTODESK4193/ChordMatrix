@@ -52,7 +52,6 @@ namespace ChordMatrix
             bool isDom = (int3 == 4 && int7 == 10);
             bool isHalfDim = (int3 == 3 && int5 == 6 && int7 == 10);
 
-            // ★エラー修正(C4700): 変数を確実にゼロ初期化
             int n1 = 0, n2 = 0, n3 = 0, n4 = 0;
             if (isDom) {
                 n1 = p3; n2 = p13; n3 = p7; n4 = p9;
@@ -164,12 +163,14 @@ namespace ChordMatrix
 
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
+        // インバージョン処理
         int inv = step.inversion % count;
         for (int i = 0; i < inv; ++i) {
             outPitches[i] += 12;
         }
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
+        // ドロップおよびスプレッド処理
         if (step.voicingMode == 1 && count >= 4) {
             outPitches[count - 2] -= 12;
             std::sort(outPitches.begin(), outPitches.begin() + count);
@@ -400,6 +401,16 @@ namespace ChordMatrix
     }
 
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
+        // =========================================================================
+        // ★新規追加: ターゲットのステップ自体が「空（休符）」の場合は最適化をスキップ
+        // （BARやALLスコープで実行した際、空ステップの内部データを破壊させないための保護）
+        // =========================================================================
+        bool targetHasActive = false;
+        for (int v = 0; v < 7; ++v) {
+            if (seq[targetStep].voices[v].isActive) { targetHasActive = true; break; }
+        }
+        if (!targetHasActive) return;
+
         int prevActiveStep = -1;
         for (int s = targetStep - 1; s >= 0; --s) {
             bool hasActive = false;
