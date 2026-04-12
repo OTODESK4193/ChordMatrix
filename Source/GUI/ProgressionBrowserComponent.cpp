@@ -196,8 +196,10 @@ namespace ChordMatrix {
             }
         }
 
+        // Keyは引き継ぐ
         int baseKey = audioProcessor.sequenceData[editBar * internalStepsPerBar].keyRoot;
-        int baseScale = audioProcessor.sequenceData[editBar * internalStepsPerBar].scaleType;
+        // ★修正: Scaleは元の状態を無視し、プリセットに設定された推奨Scale（0=Major, 1=Minor）を採用する
+        int baseScale = preset.recommendedScale;
 
         for (const auto& chord : preset.chords) {
             int totalBeatsOffset = chord.startBeat;
@@ -212,9 +214,10 @@ namespace ChordMatrix {
                 if (sData.isLocked) continue;
 
                 sData.keyRoot = baseKey;
-                sData.scaleType = baseScale;
+                sData.scaleType = baseScale; // ★ここで推奨Scaleが適用される
                 sData.chordDegree = chord.chordDegree;
                 sData.voicingMode = chord.voicingMode;
+
                 sData.gateLength = static_cast<float>(chord.lengthBeats) * ppqPerBeat;
 
                 bool isAuto = VoicingEngine::isAutoPattern(chord.voicingMode);
@@ -237,7 +240,6 @@ namespace ChordMatrix {
             }
         }
     }
-
     void ProgressionBrowserComponent::resized() {
         auto area = getLocalBounds();
         auto bottomArea = area.removeFromBottom(80);

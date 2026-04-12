@@ -23,18 +23,15 @@ namespace ChordMatrix
         int numBars;
         std::vector<PresetChord> chords;
         juce::String previewText;
+        int recommendedScale = 0; // ★新規追加: 0=Major, 1=Minor など、プリセットごとの推奨スケール
     };
 
-    // =========================================================
-    // ★バグ修正: .cpp側のデータ送信順序と完璧に一致するように
-    // relativeKeyOffset を shift に置き換えました
-    // =========================================================
     struct ChordSuggestion {
-        int targetDegree;       // 提案する次コードのディグリー (0:I, 1:II ...)
-        int targetScale;        // 推奨スケール (0:Major, 1:Minor ...)
-        int shift = 0;          // 臨時記号・借用のシフト量 (-12 to +12)
-        float probability;      // 遷移確率の重み付け (0.0 to 1.0)
-        juce::String reasoning; // 提案の理論的根拠 (UI表示用)
+        int targetDegree;
+        int targetScale;
+        int shift = 0;
+        float probability;
+        juce::String reasoning;
     };
 
     class ProgressionEngine
