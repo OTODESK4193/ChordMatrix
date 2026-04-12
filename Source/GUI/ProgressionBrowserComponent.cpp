@@ -261,14 +261,21 @@ namespace ChordMatrix {
             const auto& preset = categories[selectedCategory].presets[selectedPreset];
             if (preset.previewText.isNotEmpty()) {
                 g.setColour(juce::Colours::white);
-                g.setFont(juce::Font(18.0f, juce::Font::bold));
-                g.drawText(preset.previewText, 20, getHeight() - 60, getWidth() - 300, 40, juce::Justification::centredLeft);
+                g.setFont(juce::Font(15.0f, juce::Font::bold)); // フォントサイズを18.0fから15.0fへ微調整
+
+                // ★修正: ボタンに被らないように幅を(getWidth() - 380)に制限し、高さをフル(80)に使う
+                juce::Rectangle<int> textArea(20, getHeight() - 80, getWidth() - 380, 80);
+
+                // ★修正: drawText ではなく drawFittedText を使い、最大3行で折り返す設定にする
+                g.drawFittedText(preset.previewText, textArea, juce::Justification::centredLeft, 3, 0.85f);
             }
         }
         else {
             g.setColour(juce::Colours::grey);
             g.setFont(16.0f);
-            g.drawText("Select a progression to preview.", 20, getHeight() - 60, getWidth() - 300, 40, juce::Justification::centredLeft);
+
+            juce::Rectangle<int> textArea(20, getHeight() - 80, getWidth() - 380, 80);
+            g.drawFittedText("Select a progression to preview.", textArea, juce::Justification::centredLeft, 1);
         }
     }
 } // namespace ChordMatrix
