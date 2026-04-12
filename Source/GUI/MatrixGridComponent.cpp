@@ -20,11 +20,13 @@ namespace ChordMatrix {
         progressionBrowser.onApplyPreset = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
+            resized(); // ★修正: ブラウザを閉じた後にUIを再計算し、サジェストパネルを再表示させる
             if (onRepaintRequest) onRepaintRequest();
             };
         progressionBrowser.onCancel = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
+            resized(); // ★修正: ここにも追加
             repaint();
             };
         progressionBrowser.setVisible(false);
@@ -39,7 +41,7 @@ namespace ChordMatrix {
             int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
             int internalStepsPerBar = juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / 0.25f);
 
-            suggestionPanel.updateSuggestions(newSelectedStep, 0.25f, std::max(1, internalStepsPerBar));
+            suggestionPanel.updateSuggestions(newSelectedStep, getPpqPerStep(), std::max(1, internalStepsPerBar));
             };
     }
 
@@ -334,15 +336,12 @@ namespace ChordMatrix {
 
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
 
-        // =======================================================================
-        // ★修正: 空セルにも枠線を描画して、STEP設定による「置き場所」の視認性を高める
-        // =======================================================================
         for (int s = 0; s < uiStepsPerBar; ++s) {
             for (int v = 0; v < 7; ++v) {
                 auto bounds = getCellBounds(s, v, stepW).reduced(1.0f, 1.0f);
-                g.setColour(juce::Colour(0xff161616)); // 以前よりわずかに明るく
+                g.setColour(juce::Colour(0xff161616));
                 g.fillRect(bounds);
-                g.setColour(juce::Colour(0xff222222)); // セル間の明確な枠線
+                g.setColour(juce::Colour(0xff222222));
                 g.drawRect(bounds, 1.0f);
             }
         }
@@ -351,10 +350,6 @@ namespace ChordMatrix {
             g.drawLine(leftMargin + static_cast<float>(s) * stepW, 155.0f - 5.0f, leftMargin + static_cast<float>(s) * stepW, 155.0f + (8.0f * cellHeight), (s % uiStepsPerBeat == 0) ? 2.0f : 1.0f);
         }
 
-        // =======================================================================
-        // ★修正: ノートの有無(hasNotes)に関わらず、すべてのUIステップ列に
-        // ヘッダーやフッターを描画し、ガイド（置き場所）として機能させる
-        // =======================================================================
         for (int s = 0; s < uiStepsPerBar; ) {
             int internalS = getInternalStep(editBar, s);
             int effS = getEffectiveStep(internalS);
@@ -388,7 +383,6 @@ namespace ChordMatrix {
 
             juce::Rectangle<float> rHeader(startX, 155.0f - headerHeight - 35.0f, runW, headerHeight - 5.0f);
 
-            // 空の場合は半透明に暗くして描画
             g.setColour(isSelected ? activeColor.withAlpha(0.3f) : panelBg.withAlpha(hasNotes ? 1.0f : 0.5f));
             g.fillRoundedRectangle(rHeader.reduced(1.0f), 4.0f);
 

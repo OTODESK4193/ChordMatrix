@@ -22,7 +22,6 @@ namespace ChordMatrix {
             return;
         }
 
-        // ★修正: 対象のステップだけでなく、シーケンス全体を渡してコンテキストを解析させる
         currentSuggestions = ProgressionEngine::suggestNextChords(audioProcessor.sequenceData, currentStep, ppqPerStep);
 
         std::sort(currentSuggestions.begin(), currentSuggestions.end(),
@@ -51,11 +50,9 @@ namespace ChordMatrix {
             btn->setColour(juce::TextButton::buttonColourId, btnColor.withAlpha(0.2f));
             btn->setColour(juce::TextButton::textColourOffId, btnColor);
 
-            // ★修正: 左右のクリックイベントを個別にバインド
             btn->onLeftClick = [this, sug] { applySuggestion(sug); };
             btn->onRightClick = [this, sug] { previewSuggestion(sug); };
 
-            // ツールチップで操作ヒントを表示
             btn->setTooltip("Left Click: Apply & Next Step | Right Click: Preview Chord");
 
             addAndMakeVisible(btn);
@@ -65,11 +62,9 @@ namespace ChordMatrix {
         repaint();
     }
 
-    // ★新規追加: 右クリック時の和音プレビュー機能
     void SuggestionPanelComponent::previewSuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        // 仮想のステップデータを構築してシミュレーションする
         StepData dummyStep;
         dummyStep.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
         dummyStep.scaleType = sug.targetScale;
@@ -88,18 +83,16 @@ namespace ChordMatrix {
         audioProcessor.triggerPreview.store(true);
     }
 
-    // ★修正: 左クリック時、ステップ幅に合わせて「次へ」進みながら挿入・上書きする連続配置ロジック
     void SuggestionPanelComponent::applySuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        // 現在のUI解像度（ステップ幅）の分だけ内部ステップを進める
+        // ★修正: 現在のUI解像度（ステップ幅）の分だけ内部ステップを右へ進める
         int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
         int nextStep = currentStep + internalStepMultiplier;
 
         if (nextStep < TotalSteps) {
             auto& sData = audioProcessor.sequenceData[nextStep];
 
-            // ロックされていなければ上書き挿入する
             if (!sData.isLocked) {
                 sData.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
                 sData.chordDegree = sug.targetDegree;
@@ -107,7 +100,7 @@ namespace ChordMatrix {
 
                 sData.voicingMode = 4; // デフォルトは Rootless A
 
-                // ★修正: 挿入時の長さをUIのStep設定に完全に準拠させる
+                // ★修正: 挿入時の長さをUIのStep設定(1.0=1/4など)に完全に準拠させる
                 sData.gateLength = currentPpqPerStep;
 
                 for (int v = 0; v < 7; ++v) {
@@ -122,7 +115,7 @@ namespace ChordMatrix {
 
                 audioProcessor.previewSequenceData[nextStep] = sData;
 
-                // 適用完了後、UIのフォーカスを新しいステップに移動させる（連続打鍵が可能に）
+                // 適用完了後、UIのフォーカスを新しいステップに移動させる
                 if (onSuggestionApplied) onSuggestionApplied(nextStep);
             }
         }
@@ -136,7 +129,6 @@ namespace ChordMatrix {
         g.setColour(juce::Colours::grey);
         g.setFont(14.0f);
 
-        // ヘッダーテキストに操作ヒントを追記
         g.drawText("AI CHORD SUGGESTIONS (L-Click: Insert & Next | R-Click: Preview)",
             10, 5, 500, 20, juce::Justification::centredLeft);
 
