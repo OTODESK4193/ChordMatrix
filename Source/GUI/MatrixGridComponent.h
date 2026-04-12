@@ -35,7 +35,8 @@ namespace ChordMatrix {
         int selectedStep = 0;
         int selectedVoice = -1;
 
-        const float leftMargin = 60.0f;
+        // ★修正: 度数表記が見切れないよう、左の余白を60から90へ拡大
+        const float leftMargin = 90.0f;
         const float cellHeight = 50.0f;
         const float headerHeight = 60.0f;
         const float seqTotalWidth = 740.0f;
@@ -59,11 +60,7 @@ namespace ChordMatrix {
 
         bool isMemoryModeOpen = false;
 
-        // =================================================================
-        // ★修正: cpp側で実装した変換関数の宣言をヘッダーに追加
-        // =================================================================
         int getInternalStep(int bar, int uiStep) const;
-
         int getEffectiveStep(int targetS) const;
         juce::Rectangle<float> getCellBounds(int step, int voiceRow, float stepW) const;
         juce::Rectangle<float> getStepHeaderBounds(int step, float stepW) const;

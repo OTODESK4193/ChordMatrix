@@ -115,18 +115,15 @@ namespace ChordMatrix {
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
 
-        // =========================================================================
-        // ★修正: 挿入時の位置計算を、UIの表示状態(Step)に依存させず、
-        // 常に内部解像度（0.25 PPQ = 1/16音符）ベースで正確に計算・配置する
-        // =========================================================================
-        float internalPpqPerStep = 0.25f;
+        // ★修正: 1小節あたりの内部ステップ数（0.25 PPQ = 1/16音符ベース）を正確に計算
         float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
-        int internalStepsPerBar = std::max(1, juce::roundToInt(beatsPerBar / internalPpqPerStep));
+        int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
 
+        // ★修正: 1拍（Beat）あたりの内部ステップ数を正確に計算
+        // 例: 4/4拍子なら1拍(四分音符)=1.0 PPQ なので 4ステップ
         float ppqPerBeat = 4.0f / static_cast<float>(tsDen);
-        int internalStepsPerBeat = std::max(1, juce::roundToInt(ppqPerBeat / internalPpqPerStep));
+        int internalStepsPerBeat = juce::roundToInt(ppqPerBeat / 0.25f);
 
-        // まず、挿入先の小節範囲を内部解像度ベースでクリア・初期化する
         for (int b = 0; b < preset.numBars; ++b) {
             int targetBar = editBar + b;
             if (targetBar >= 16) break;
@@ -136,7 +133,6 @@ namespace ChordMatrix {
                 int step = barStartStep + s;
                 auto& sData = audioProcessor.sequenceData[step];
 
-                // 既存のロック状態は保持しつつ、それ以外をクリア
                 bool wasLocked = sData.isLocked;
                 sData = {};
                 sData.isLocked = wasLocked;
@@ -145,28 +141,29 @@ namespace ChordMatrix {
             }
         }
 
-        // ベースとなるKeyとScaleを取得（挿入開始位置のものを引き継ぐ）
         int baseKey = audioProcessor.sequenceData[editBar * internalStepsPerBar].keyRoot;
         int baseScale = audioProcessor.sequenceData[editBar * internalStepsPerBar].scaleType;
 
-        // プリセットの各和音を、内部解像度（0.25 PPQ）の正確なステップ位置に配置する
         for (const auto& chord : preset.chords) {
-            int targetBar = editBar + (chord.startBeat / static_cast<int>(beatsPerBar));
+            // ★修正: chord.startBeat は「1拍単位」のオフセットなので、そのまま拍あたりのステップ数を掛ける
+            int totalBeatsOffset = chord.startBeat;
+            int targetBar = editBar + (totalBeatsOffset / tsNum);
             if (targetBar >= 16) continue;
 
-            int targetStep = targetBar * internalStepsPerBar + (chord.startBeat % static_cast<int>(beatsPerBar)) * internalStepsPerBeat;
+            // ★修正: 小節の先頭インデックス ＋ 余りの拍数 × 1拍のステップ数
+            int targetStep = (targetBar * internalStepsPerBar) + ((totalBeatsOffset % tsNum) * internalStepsPerBeat);
 
             if (targetStep < ChordMatrix::TotalSteps) {
                 auto& sData = audioProcessor.sequenceData[targetStep];
 
-                // ロックされているステップには上書きしない
                 if (sData.isLocked) continue;
 
                 sData.keyRoot = baseKey;
                 sData.scaleType = baseScale;
                 sData.chordDegree = chord.chordDegree;
                 sData.voicingMode = chord.voicingMode;
-                // gateLength は拍（Beat）数ベースで定義されているため、そのままPPQ長さに変換
+
+                // ★修正: 長さ(lengthBeats)をPPQに変換して保存
                 sData.gateLength = static_cast<float>(chord.lengthBeats) * ppqPerBeat;
 
                 bool isAuto = VoicingEngine::isAutoPattern(chord.voicingMode);
