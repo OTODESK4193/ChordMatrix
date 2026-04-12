@@ -15,9 +15,7 @@ namespace ChordMatrix
     int VoicingEngine::getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches) {
         int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
 
-        // =====================================================================
-        // UST ボイシング (Upper Structure Triads)
-        // =====================================================================
+        // UST ボイシング
         if (step.voicingMode == 6 || step.voicingMode == 7 || (step.voicingMode >= 16 && step.voicingMode <= 19)) {
             int ustRootOffset = 0;
             if (step.voicingMode == 6) ustRootOffset = 1;
@@ -29,20 +27,16 @@ namespace ChordMatrix
 
             int ustBase = rootPitch + 12 + ustRootOffset;
 
-            // 左手骨格 (Root, 3rd, 7th)
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 4 + step.voices[1].accidental;
             outPitches[2] = rootPitch + 10 + step.voices[2].accidental;
 
-            // 右手トライアド
             outPitches[3] = ustBase + step.voices[3].accidental;
             outPitches[4] = ustBase + 4 + step.voices[4].accidental;
             outPitches[5] = ustBase + 7 + step.voices[5].accidental;
             return 6;
         }
-        // =====================================================================
         // スケール完全追従型 ルートレス・ボイシング (Type A / Type B)
-        // =====================================================================
         else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
             int p3 = MusicTheory::getBasePitch(step, 1);
@@ -58,7 +52,7 @@ namespace ChordMatrix
             bool isDom = (int3 == 4 && int7 == 10);
             bool isHalfDim = (int3 == 3 && int5 == 6 && int7 == 10);
 
-            // ★修正: 警告C4700を消滅させるため、明示的にゼロ初期化
+            // ★エラー修正(C4700): 変数を確実にゼロ初期化
             int n1 = 0, n2 = 0, n3 = 0, n4 = 0;
             if (isDom) {
                 n1 = p3; n2 = p13; n3 = p7; n4 = p9;
@@ -89,9 +83,7 @@ namespace ChordMatrix
             }
             return 4;
         }
-        // =====================================================================
         // スケール追従型 Quartal ボイシング
-        // =====================================================================
         else if (step.voicingMode == 8) {
             int r = rootPitch;
             int p11 = MusicTheory::getBasePitch(step, 5);
@@ -109,18 +101,14 @@ namespace ChordMatrix
             outPitches[3] = n4 + step.voices[3].accidental;
             return 4;
         }
-        // =====================================================================
         // Shell (1-3-7)
-        // =====================================================================
         else if (step.voicingMode == 9) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 1) + step.voices[1].accidental;
             outPitches[2] = MusicTheory::getBasePitch(step, 3) + step.voices[3].accidental;
             return 3;
         }
-        // =====================================================================
         // スケール追従型 So What ボイシング
-        // =====================================================================
         else if (step.voicingMode == 12) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 5) - 12 + step.voices[1].accidental;
@@ -131,9 +119,7 @@ namespace ChordMatrix
             std::sort(outPitches.begin(), outPitches.begin() + 5);
             return 5;
         }
-        // =====================================================================
         // Cluster (2nds)
-        // =====================================================================
         else if (step.voicingMode == 13) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 2 + step.voices[1].accidental;
@@ -141,9 +127,7 @@ namespace ChordMatrix
             outPitches[3] = rootPitch + 7 + step.voices[3].accidental;
             return 4;
         }
-        // =====================================================================
         // Kenny Barron (Min11ths)
-        // =====================================================================
         else if (step.voicingMode == 14) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 7 + step.voices[1].accidental;
@@ -180,14 +164,12 @@ namespace ChordMatrix
 
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
-        // インバージョン処理
         int inv = step.inversion % count;
         for (int i = 0; i < inv; ++i) {
             outPitches[i] += 12;
         }
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
-        // ドロップおよびスプレッド処理
         if (step.voicingMode == 1 && count >= 4) {
             outPitches[count - 2] -= 12;
             std::sort(outPitches.begin(), outPitches.begin() + count);
@@ -417,9 +399,6 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
-    // =========================================================================
-    // ★AI最適化エンジン: 幾何学的音楽理論、ジャズガイドトーン、対位法禁則の統合
-    // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
         int prevActiveStep = -1;
         for (int s = targetStep - 1; s >= 0; --s) {
@@ -456,7 +435,6 @@ namespace ChordMatrix
 
         int maxInv = autoPat ? 1 : 7;
 
-        // ★shiftと各voiceのoctaveShiftは一切変更しない
         for (int mode : modesToTry) {
             for (int inv = 0; inv < maxInv; ++inv) {
                 Candidate c;

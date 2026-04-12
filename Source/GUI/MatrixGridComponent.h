@@ -2,7 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../PluginProcessor.h"
 #include "ProgressionBrowserComponent.h"
-#include "SuggestionPanelComponent.h" // ★追加
+#include "SuggestionPanelComponent.h" 
 
 namespace ChordMatrix {
 
@@ -29,7 +29,7 @@ namespace ChordMatrix {
     private:
         ChordMatrixAudioProcessor& audioProcessor;
         ProgressionBrowserComponent progressionBrowser;
-        SuggestionPanelComponent suggestionPanel; // ★サジェストパネルを追加
+        SuggestionPanelComponent suggestionPanel;
 
         bool isProgressionMode = false;
         int selectedStep = 0;
@@ -58,6 +58,11 @@ namespace ChordMatrix {
         juce::TextButton btnModPreview{ "PREVIEW" }, btnModApply{ "APPLY" }, btnModCancel{ "CANCEL" };
 
         bool isMemoryModeOpen = false;
+
+        // =================================================================
+        // ★修正: cpp側で実装した変換関数の宣言をヘッダーに追加
+        // =================================================================
+        int getInternalStep(int bar, int uiStep) const;
 
         int getEffectiveStep(int targetS) const;
         juce::Rectangle<float> getCellBounds(int step, int voiceRow, float stepW) const;

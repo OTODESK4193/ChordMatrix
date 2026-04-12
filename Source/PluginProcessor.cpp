@@ -143,14 +143,15 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
     }
 
+    // ★修正: 内部解像度を1/16音符(0.25 PPQ)に完全固定
     float beatsPerBar = (float)tsNum * (4.0f / (float)tsDen);
-    int stepsPerBar = juce::roundToInt(beatsPerBar / ppqPerStep);
-    if (stepsPerBar < 1) stepsPerBar = 1;
+    int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
+    if (internalStepsPerBar < 1) internalStepsPerBar = 1;
 
     int loopIdx = (int)*apvts.getRawParameterValue("loopBars");
     constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
     int numBars = barsMap[loopIdx];
-    int totalStepsInLoop = numBars * stepsPerBar;
+    int totalStepsInLoop = numBars * internalStepsPerBar;
 
     if ((isPlaying && ppq < lastPPQ) || (!isPlaying && wasPlaying))
     {
@@ -182,7 +183,8 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     if (isPlaying)
     {
-        int stepIdx = static_cast<int>(ppq / (double)ppqPerStep);
+        // ★修正: プレイヘッドも常に固定解像度(0.25 PPQ)で進行する
+        int stepIdx = static_cast<int>(ppq / 0.25);
         int stepInLoop = stepIdx % totalStepsInLoop;
 
         if (stepIdx != currentGlobalStep)

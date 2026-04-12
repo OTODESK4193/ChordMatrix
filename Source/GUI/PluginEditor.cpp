@@ -44,21 +44,24 @@ void ChordMatrixAudioProcessorEditor::timerCallback() {
     header.updateUI();
 
     if (audioProcessor.isPlaying && audioProcessor.currentGlobalStep >= 0) {
+        // ------------------------------------------------------------
+        // 変更後 (PluginEditor.cpp)
+        // ------------------------------------------------------------
         int tsNum = (int)*audioProcessor.apvts.getRawParameterValue("timeSigNum");
-        // ...
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-        int stepSizeIdx = (int)*audioProcessor.apvts.getRawParameterValue("stepSize");
-        float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
-        int stepsPerBar = juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / ppqPerStep);
-        if (stepsPerBar < 1) stepsPerBar = 1;
+
+        // ★修正: Editorの同期も固定解像度(0.25 PPQ)ベースに合わせる
+        float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
+        int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
+        if (internalStepsPerBar < 1) internalStepsPerBar = 1;
 
         int loopIdx = (int)*audioProcessor.apvts.getRawParameterValue("loopBars");
         constexpr std::array<int, 5> barsMap = { 1, 4, 8, 12, 16 };
-        int totalStepsInLoop = barsMap[loopIdx] * stepsPerBar;
+        int totalStepsInLoop = barsMap[loopIdx] * internalStepsPerBar;
 
         int currentStepInLoop = audioProcessor.currentGlobalStep % totalStepsInLoop;
-        int playingBar = currentStepInLoop / stepsPerBar;
+        int playingBar = currentStepInLoop / internalStepsPerBar;
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
 
         if (isFollowMode) {
