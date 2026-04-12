@@ -15,7 +15,6 @@ namespace ChordMatrix
     int VoicingEngine::getPatternBPitches(const StepData& step, std::array<int, 7>& outPitches) {
         int rootPitch = MusicTheory::getBasePitch(step, 0) + step.shift;
 
-        // UST ボイシング
         if (step.voicingMode == 6 || step.voicingMode == 7 || (step.voicingMode >= 16 && step.voicingMode <= 19)) {
             int ustRootOffset = 0;
             if (step.voicingMode == 6) ustRootOffset = 1;
@@ -36,7 +35,6 @@ namespace ChordMatrix
             outPitches[5] = ustBase + 7 + step.voices[5].accidental;
             return 6;
         }
-        // スケール完全追従型 ルートレス・ボイシング (Type A / Type B)
         else if (step.voicingMode == 4 || step.voicingMode == 5) {
             int r = rootPitch;
             int p3 = MusicTheory::getBasePitch(step, 1);
@@ -82,7 +80,6 @@ namespace ChordMatrix
             }
             return 4;
         }
-        // スケール追従型 Quartal ボイシング
         else if (step.voicingMode == 8) {
             int r = rootPitch;
             int p11 = MusicTheory::getBasePitch(step, 5);
@@ -100,14 +97,12 @@ namespace ChordMatrix
             outPitches[3] = n4 + step.voices[3].accidental;
             return 4;
         }
-        // Shell (1-3-7)
         else if (step.voicingMode == 9) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 1) + step.voices[1].accidental;
             outPitches[2] = MusicTheory::getBasePitch(step, 3) + step.voices[3].accidental;
             return 3;
         }
-        // スケール追従型 So What ボイシング
         else if (step.voicingMode == 12) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = MusicTheory::getBasePitch(step, 5) - 12 + step.voices[1].accidental;
@@ -118,7 +113,6 @@ namespace ChordMatrix
             std::sort(outPitches.begin(), outPitches.begin() + 5);
             return 5;
         }
-        // Cluster (2nds)
         else if (step.voicingMode == 13) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 2 + step.voices[1].accidental;
@@ -126,7 +120,6 @@ namespace ChordMatrix
             outPitches[3] = rootPitch + 7 + step.voices[3].accidental;
             return 4;
         }
-        // Kenny Barron (Min11ths)
         else if (step.voicingMode == 14) {
             outPitches[0] = rootPitch + step.voices[0].accidental;
             outPitches[1] = rootPitch + 7 + step.voices[1].accidental;
@@ -163,14 +156,12 @@ namespace ChordMatrix
 
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
-        // インバージョン処理
         int inv = step.inversion % count;
         for (int i = 0; i < inv; ++i) {
             outPitches[i] += 12;
         }
         std::sort(outPitches.begin(), outPitches.begin() + count);
 
-        // ドロップおよびスプレッド処理
         if (step.voicingMode == 1 && count >= 4) {
             outPitches[count - 2] -= 12;
             std::sort(outPitches.begin(), outPitches.begin() + count);
@@ -400,179 +391,119 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
-    // =========================================================================
-    // ★新AI最適化エンジン: 1対1のボイスマッピングと重心計算による跳躍撲滅版
-    // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
-        bool targetHasActive = false;
-        for (int v = 0; v < 7; ++v) {
-            if (seq[targetStep].voices[v].isActive) { targetHasActive = true; break; }
-        }
-        if (!targetHasActive) return;
-
-        int prevActiveStep = -1;
-        for (int s = targetStep - 1; s >= 0; --s) {
+        std::vector<int> activeSteps;
+        for (int s = 0; s < TotalSteps; ++s) {
             bool hasActive = false;
-            for (int v = 0; v < NumVoices; ++v) {
+            for (int v = 0; v < 7; ++v) {
                 if (seq[s].voices[v].isActive) { hasActive = true; break; }
             }
-            if (hasActive) { prevActiveStep = s; break; }
+            if (hasActive) activeSteps.push_back(s);
         }
 
-        if (prevActiveStep < 0) return;
+        if (activeSteps.size() < 2) return;
 
-        std::array<int, 7> prevPitches = { 0 };
-        int prevCount = getVoicedPitches(seq[prevActiveStep], prevPitches);
-        if (prevCount == 0) return;
-
-        struct Candidate {
+        struct State {
             int voicingMode;
             int inversion;
+            std::array<int, 7> pitches;
+            int count;
             float cost;
+            int bestPrevState;
         };
-        std::vector<Candidate> candidates;
 
-        StepData baseStep = seq[targetStep];
-        bool autoPat = isAutoPattern(baseStep.voicingMode);
+        std::vector<int> allowedModes = { 0, 1, 4, 5, 8, 12 };
+        std::vector<std::vector<State>> dp(activeSteps.size());
 
-        std::vector<int> modesToTry;
-        if (baseStep.voicingMode == 4 || baseStep.voicingMode == 5) {
-            modesToTry = { 4, 5 };
-        }
-        else {
-            modesToTry = { baseStep.voicingMode };
-        }
+        for (size_t t = 0; t < activeSteps.size(); ++t) {
+            int s = activeSteps[t];
 
-        int maxInv = autoPat ? 1 : 7;
-
-        for (int mode : modesToTry) {
-            for (int inv = 0; inv < maxInv; ++inv) {
-                Candidate c;
-                c.voicingMode = mode;
-                c.inversion = inv;
-                c.cost = 0.0f;
-                candidates.push_back(c);
-            }
-        }
-
-        int prev7thPC = -1;
-        if (seq[prevActiveStep].chordDegree == 1 || seq[prevActiveStep].chordDegree == 4) {
-            prev7thPC = (((MusicTheory::getBasePitch(seq[prevActiveStep], 3) + seq[prevActiveStep].shift) % 12) + 12) % 12;
-        }
-        int curr3rdPC = (((MusicTheory::getBasePitch(baseStep, 1) + baseStep.shift) % 12) + 12) % 12;
-        bool isGuideToneResolution = (seq[prevActiveStep].chordDegree == 1 && baseStep.chordDegree == 4) ||
-            (seq[prevActiveStep].chordDegree == 4 && baseStep.chordDegree == 0);
-
-        // 前の和音の重心（Center of Gravity）を計算
-        float prevCog = 0.0f;
-        for (int i = 0; i < prevCount; ++i) prevCog += static_cast<float>(prevPitches[i]);
-        prevCog /= static_cast<float>(prevCount);
-
-        for (auto& c : candidates) {
-            StepData testStep = baseStep;
-            testStep.voicingMode = c.voicingMode;
-            testStep.inversion = c.inversion;
-
-            std::array<int, 7> testPitches = { 0 };
-            int testCount = getVoicedPitches(testStep, testPitches);
-
-            if (testCount == 0) { c.cost = 999999.0f; continue; }
-
-            float l1Cost = 0.0f;
-            int maxJump = 0;
-
-            // =================================================================
-            // ★修正: 1対1の正確なボイス・バイジェクション（対応関係）で距離を測る
-            // 下からi番目の音は、前の和音の下からi番目の音と距離を比較する
-            // =================================================================
-            int compareCount = std::min(testCount, prevCount);
-            for (int i = 0; i < compareCount; ++i) {
-                int dist = std::abs(testPitches[i] - prevPitches[i]);
-                l1Cost += static_cast<float>(dist);
-                if (dist > maxJump) maxJump = dist;
-
-                if (dist == 0) c.cost -= 10.0f; // 共通音ボーナス
+            if (seq[s].isLocked) {
+                std::array<int, 7> testPitches = { 0 };
+                int count = getVoicedPitches(seq[s], testPitches);
+                dp[t].push_back({ seq[s].voicingMode, seq[s].inversion, testPitches, count, 0.0f, -1 });
+                continue;
             }
 
-            c.cost += l1Cost * 2.0f;
+            for (int mode : allowedModes) {
+                int maxInv = isAutoPattern(mode) ? 1 : 4;
+                for (int inv = 0; inv < maxInv; ++inv) {
+                    StepData tempStep = seq[s];
+                    tempStep.voicingMode = mode;
+                    tempStep.inversion = inv;
+                    std::array<int, 7> testPitches = { 0 };
+                    int count = getVoicedPitches(tempStep, testPitches);
 
-            // 大跳躍には非常に厳しいペナルティ（これでオクターブジャンプが消滅します）
-            if (maxJump > 5) c.cost += static_cast<float>(maxJump) * 8.0f;
-            if (maxJump > 10) c.cost += 500.0f; // 1オクターブ近い跳躍はほぼ禁止
-
-            // 声部数が変わる（音が消える、増える）場合のペナルティ
-            if (testCount != prevCount) {
-                c.cost += static_cast<float>(std::abs(testCount - prevCount)) * 10.0f;
-            }
-
-            // ★追加: 和音の重心（平均ピッチ）の移動ペナルティ
-            float testCog = 0.0f;
-            for (int i = 0; i < testCount; ++i) testCog += static_cast<float>(testPitches[i]);
-            testCog /= static_cast<float>(testCount);
-            c.cost += std::abs(testCog - prevCog) * 5.0f;
-
-            if (isGuideToneResolution && prev7thPC != -1) {
-                for (int i = 0; i < prevCount; ++i) {
-                    if ((((prevPitches[i] % 12) + 12) % 12) == prev7thPC) {
-                        for (int j = 0; j < testCount; ++j) {
-                            if ((((testPitches[j] % 12) + 12) % 12) == curr3rdPC) {
-                                int dist = testPitches[j] - prevPitches[i];
-                                if (dist == -1 || dist == -2) {
-                                    c.cost -= 50.0f;
-                                }
-                            }
-                        }
+                    if (count > 0) {
+                        dp[t].push_back({ mode, inv, testPitches, count, 0.0f, -1 });
                     }
                 }
             }
-
-            if (testCount == prevCount) {
-                for (int i = 0; i < testCount - 1; ++i) {
-                    for (int j = i + 1; j < testCount; ++j) {
-                        int prevInt = (prevPitches[j] - prevPitches[i]) % 12;
-                        int currInt = (testPitches[j] - testPitches[i]) % 12;
-
-                        if ((prevInt == 7 || prevInt == 0) && currInt == prevInt) {
-                            if ((testPitches[i] - prevPitches[i]) * (testPitches[j] - prevPitches[j]) > 0) {
-                                c.cost += 1000.0f;
-                            }
-                        }
-                    }
-                }
-            }
-
-            int highestPitch = testPitches[testCount - 1];
-            if (highestPitch > 79) c.cost += static_cast<float>(highestPitch - 79) * 5.0f;
-            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 2.0f;
-
-            int lowestPitch = testPitches[0];
-            if (lowestPitch < 40) c.cost += static_cast<float>(40 - lowestPitch) * 3.0f;
         }
 
-        std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-            return a.cost < b.cost;
-            });
+        for (size_t t = 1; t < activeSteps.size(); ++t) {
+            for (size_t v = 0; v < dp[t].size(); ++v) {
+                float minCost = 9999999.0f;
+                int bestU = -1;
 
-        if (!candidates.empty()) {
-            std::vector<Candidate> uniqueCandidates;
-            uniqueCandidates.push_back(candidates[0]);
+                for (size_t u = 0; u < dp[t - 1].size(); ++u) {
+                    float transitionCost = 0.0f;
+                    int compCount = std::min(dp[t - 1][u].count, dp[t][v].count);
+                    int maxJump = 0;
 
-            for (size_t i = 1; i < candidates.size(); ++i) {
-                bool isUnique = true;
-                for (const auto& uc : uniqueCandidates) {
-                    if (candidates[i].voicingMode == uc.voicingMode &&
-                        candidates[i].inversion == uc.inversion) {
-                        isUnique = false; break;
+                    for (int i = 0; i < compCount; ++i) {
+                        int dist = std::abs(dp[t][v].pitches[i] - dp[t - 1][u].pitches[i]);
+                        transitionCost += static_cast<float>(dist);
+                        if (dist > maxJump) maxJump = dist;
+                        if (dist == 0) transitionCost -= 3.0f;
+                    }
+
+                    if (maxJump > 5) transitionCost += static_cast<float>(maxJump) * 10.0f;
+                    if (maxJump > 10) transitionCost += 500.0f;
+
+                    int topDist = std::abs(dp[t][v].pitches[dp[t][v].count - 1] - dp[t - 1][u].pitches[dp[t - 1][u].count - 1]);
+                    transitionCost += static_cast<float>(topDist) * 3.0f;
+
+                    int bassDist = std::abs(dp[t][v].pitches[0] - dp[t - 1][u].pitches[0]);
+                    if (bassDist == 0 && dp[t][v].pitches[0] != dp[t - 1][u].pitches[0]) {
+                        transitionCost += 20.0f;
+                    }
+
+                    float stateCost = 0.0f;
+                    int topPitch = dp[t][v].pitches[dp[t][v].count - 1];
+                    int bottomPitch = dp[t][v].pitches[0];
+                    if (topPitch > 84) stateCost += static_cast<float>(topPitch - 84) * 5.0f;
+                    if (bottomPitch < 40) stateCost += static_cast<float>(40 - bottomPitch) * 5.0f;
+
+                    float totalCost = dp[t - 1][u].cost + transitionCost + stateCost;
+
+                    if (totalCost < minCost) {
+                        minCost = totalCost;
+                        bestU = static_cast<int>(u);
                     }
                 }
-                if (isUnique) uniqueCandidates.push_back(candidates[i]);
+                dp[t][v].cost = minCost;
+                dp[t][v].bestPrevState = bestU;
             }
+        }
 
-            int selectedIdx = altIndex % uniqueCandidates.size();
-            auto& best = uniqueCandidates[selectedIdx];
+        int bestFinalState = 0;
+        float minFinalCost = 9999999.0f;
+        for (size_t v = 0; v < dp.back().size(); ++v) {
+            if (dp.back()[v].cost < minFinalCost) {
+                minFinalCost = dp.back()[v].cost;
+                bestFinalState = static_cast<int>(v);
+            }
+        }
 
-            seq[targetStep].voicingMode = best.voicingMode;
-            seq[targetStep].inversion = best.inversion;
+        int currState = bestFinalState;
+        for (int t = static_cast<int>(activeSteps.size()) - 1; t >= 0; --t) {
+            int s = activeSteps[t];
+            if (!seq[s].isLocked) {
+                seq[s].voicingMode = dp[t][currState].voicingMode;
+                seq[s].inversion = dp[t][currState].inversion;
+            }
+            currState = dp[t][currState].bestPrevState;
         }
     }
 }
