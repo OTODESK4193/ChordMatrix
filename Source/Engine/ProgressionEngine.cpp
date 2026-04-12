@@ -77,7 +77,6 @@ namespace ChordMatrix
         }
 
         // --- 5. Modal Interchange Emotions (Pink Category) ---
-        // ★修正: shift（臨時記号）の値を明記しました
         struct Emotion { int deg; int scale; int shift; float bright; float surprise; std::string name; };
         static const std::vector<Emotion> BORROWED_EMOTIONS = {
             { 1, 0, -1, 0.3f, 0.9f, "bII (Neapolitan)" },
@@ -86,7 +85,6 @@ namespace ChordMatrix
             { 6, 0, -1, 0.8f, 0.6f, "bVII (Subtonic)" }
         };
 
-        // ★修正: shift 値を保持するように拡張
         struct Cand {
             int deg; int scale; int shift; bool isBorrowed;
             float cyanScore = 0; float yellowScore = 0; float pinkScore = 0;
@@ -123,11 +121,9 @@ namespace ChordMatrix
 
         std::vector<AI_Models::Cand> candidates;
 
-        // ★修正: shift 値を受け取って正確な和音を展開する
         auto createDummyStep = [&](int d, int sc, int sh) {
-            StepData st = prev; // 直前のボイシング設定などを引き継ぐ
+            StepData st = prev;
             st.keyRoot = curKey; st.chordDegree = d; st.scaleType = sc; st.shift = sh;
-            // 仮想的に4声で鳴らす
             for (int i = 0; i < 7; ++i) st.voices[i].isActive = (i < 4);
             return st;
             };
@@ -166,10 +162,8 @@ namespace ChordMatrix
 
         // --- B. モーダル・インターチェンジ候補 (Pink / Yellow) ---
         for (const auto& mi : AI_Models::BORROWED_EMOTIONS) {
-            // ★修正: shift = mi.shift を追加
             AI_Models::Cand c; c.deg = mi.deg; c.scale = mi.scale; c.shift = mi.shift; c.isBorrowed = true;
 
-            // ★修正: shift を考慮してTonnetz距離を計算する
             c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(mi.deg, mi.scale, mi.shift)) : 0.0f;
 
             float emotionScore = (mi.surprise * 0.7f) + (mi.bright * 0.3f);
@@ -188,9 +182,6 @@ namespace ChordMatrix
             candidates.push_back(c);
         }
 
-        // ============================================================
-        // 10枠 ポートフォリオ・アロケーター
-        // ============================================================
         auto sortAndFilter = [](std::vector<AI_Models::Cand>& cands, int mode, int maxSlots, std::vector<int>& pickedIds) {
             std::vector<AI_Models::Cand> result;
 
@@ -205,8 +196,6 @@ namespace ChordMatrix
                 float score = (mode == 0) ? c.cyanScore : (mode == 1) ? c.yellowScore : c.pinkScore;
                 if (score <= 0.001f) continue;
 
-                // ★バグ修正: 単なる度数(deg)ではなく、度数+シフト量で一意なIDを作成し、
-                // ピンク枠（bVI）とシアン枠（vi）が衝突して消滅するのを防ぎます
                 int uniqueId = c.deg * 100 + c.shift;
 
                 if (std::find(pickedIds.begin(), pickedIds.end(), uniqueId) == pickedIds.end()) {
@@ -222,10 +211,9 @@ namespace ChordMatrix
         auto yellowList = sortAndFilter(candidates, 1, nextIdx >= 0 ? 3 : 0, globalPickedIds);
         auto pinkList = sortAndFilter(candidates, 2, 3, globalPickedIds);
 
-        // 不足分をCyanから補填
         int total = cyanList.size() + yellowList.size() + pinkList.size();
         if (total < 10) {
-            std::vector<int> dummy; // 補填分は重複を許容
+            std::vector<int> dummy;
             auto extraCyan = sortAndFilter(candidates, 0, 4 + (10 - total), dummy);
             cyanList = extraCyan;
         }
@@ -238,7 +226,6 @@ namespace ChordMatrix
                 }
                 if (!exists) {
                     float finalScore = std::max({ c.cyanScore, c.yellowScore, c.pinkScore });
-                    // ★修正: c.shift を確実にサジェスト結果に渡す
                     suggestions.push_back({ c.deg, c.scale, c.shift, finalScore, c.tag });
                 }
             }
@@ -253,7 +240,6 @@ namespace ChordMatrix
         return suggestions;
     }
 
-    // --- 以降の getModulationNames, applyModulation, getProgressionDictionary はそのまま維持 ---
     juce::StringArray ProgressionEngine::getModulationNames() { return { "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i", "Backdoor (IVm7-bVII7)", "Passing Diminished", "Secondary Dominant", "Double ii-V", "Coltrane Matrix", "Extended Dominant", "Chromatic Up", "Chromatic Down", "Deceptive (V7->vi)", "Constant Structure", "Pedal Point", "Neo-Riemannian P", "Neo-Riemannian L", "Neo-Riemannian R" }; }
 
     void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source, std::array<StepData, TotalSteps>& dest, int targetBar, int targetKey, int targetScale, int method, int stepsPerBar, int stepsPerBeat, float ppqPerStep) {
@@ -311,6 +297,8 @@ namespace ChordMatrix
     const std::vector<ProgressionPreset>& ProgressionEngine::getProgressionDictionary() {
         static std::vector<ProgressionPreset> dict;
         if (dict.empty()) {
+
+            // --- 既存の1〜10カテゴリ ---
             dict.push_back({ "1. US: Trap & Neo-Soul", "Modern Trap Soul", 4, {{0,8,0,9,0,0,0,0}, {8,4,3,9,0,0,0,0}, {12,4,6,9,0,0,0,0}}, "i - iv - VII (Shell)" });
             dict.push_back({ "1. US: Trap & Neo-Soul", "Neo R&B Loop", 4, {{0,4,1,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,0,4,0,0,0,0}, {12,4,5,4,0,0,0,0}}, "ii - V - I - vi (Rootless)" });
             dict.push_back({ "1. US: Trap & Neo-Soul", "Cinematic Trap", 4, {{0,4,0,13,0,0,0,0}, {4,4,5,13,-1,0,0,0}, {8,4,2,13,-1,0,0,0}, {12,4,6,13,-1,0,0,0}}, "i - bVI - bIII - bVII (Cluster)" });
@@ -419,6 +407,58 @@ namespace ChordMatrix
             dict.push_back({ "10. Advanced Theory", "Minor Tonic 9th (Im9)", 4, {{0,4,1,0,0,0,-1,0}, {4,4,4,0,0,1,0,0}, {8,8,0,4,0,0,0,0}}, "iim7b5 - V7alt - Im9" });
             dict.push_back({ "10. Advanced Theory", "Altered Sec Dom (V7#5/vi)", 4, {{0,4,2,0,0,0,-1,0}, {4,4,2,0,0,1,1,0}, {8,8,5,4,0,0,0,0}}, "iiim7b5 - III7(#5) - vim9" });
             dict.push_back({ "10. Advanced Theory", "Harmonic Major 2-5-1", 4, {{0,4,1,4,0,0,-1,0}, {4,4,4,4,0,0,0,0}, {8,8,0,4,0,0,0,0}}, "iim7b5 - V7(b9,13) - Imaj7" });
+
+            // =========================================================
+            // --- ★ここから新規追加：Advanced 40 パターン ---
+            // =========================================================
+
+            // 4 Bars (1-10)
+            dict.push_back({ "11. Advanced: Neo-Soul", "Misch Chromatic Voice Leading", 4, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 6, 4, 0, 0, 0, -1}, {8, 4, 2, 4, -1, 0, 1, -1}, {12, 4, 5, 4, 0, -1, 0, -1} }, "IVmaj9 - VII13sus - bIII7#5 - vim11" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Glasper Altered Vamp", 4, { {0, 4, 0, 4, 0, -1, 0, -1}, {4, 4, 1, 4, -1, 0, 0, 0}, {8, 4, 0, 4, 0, -1, 0, -1}, {12, 4, 3, 4, 0, 0, 0, -1} }, "im11 - bIImaj7#11 - im11 - IV13" });
+            dict.push_back({ "13. Advanced: K-Pop", "Jersey Club Sophisticated Loop", 4, { {0, 4, 3, 4, 0, -1, 0, -1}, {4, 4, 4, 4, 0, 0, 0, -1}, {8, 4, 4, 4, 0, -1, 0, -1}, {12, 4, 0, 4, 0, 0, 1, -1} }, "IVm9 - V7b9 - vm11 - I7alt" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Moonchild Float", 4, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 1, 4, -1, 0, 0, 0}, {8, 4, 5, 4, 0, -1, 0, -1}, {12, 4, 5, 4, -1, 0, 0, 0} }, "Imaj9 - bIImaj7 - vim9 - bVImaj9" });
+            dict.push_back({ "14. Advanced: City Pop", "Tatsuro Passing Diminished", 4, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 3, 4, 1, -1, -1, -2}, {8, 4, 4, 4, 0, 0, 0, -1}, {12, 4, 4, 4, 0, 0, 0, -1} }, "IVmaj9 - #IVdim7 - V13sus - V7b9" });
+            dict.push_back({ "13. Advanced: K-Pop", "RV Harmonic Shift", 4, { {0, 4, 2, 4, 0, -1, 0, -1}, {4, 4, 5, 4, 0, 0, 1, -1}, {8, 4, 1, 4, 0, 0, 0, 0}, {12, 4, 4, 4, 0, 0, 0, -1} }, "iiim7 - VI7#9 - IImaj9 - V13sus" });
+            dict.push_back({ "15. Advanced: Gospel", "Tritone Drop", 4, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 2, 4, -1, 0, 0, -1}, {8, 4, 1, 4, 0, -1, 0, -1}, {12, 4, 1, 4, -1, 0, 0, -1} }, "Imaj9 - bIII7#11 - iim11 - bII13" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Classic Backdoor Cadence", 4, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 3, 4, 0, -1, 0, -1}, {8, 4, 6, 4, -1, 0, 0, -1}, {12, 4, 0, 4, 0, 0, 0, 0} }, "IVmaj9 - ivm9 - bVII13 - Imaj9" });
+            dict.push_back({ "14. Advanced: City Pop", "Extended 2-5-1-6", 4, { {0, 4, 1, 4, 0, -1, 0, -1}, {4, 4, 4, 4, 0, 0, 0, -1}, {8, 4, 0, 4, 0, 0, 0, 0}, {12, 4, 5, 4, 0, 0, 1, -1} }, "iim9 - V13 - Imaj9 - VI7b13" });
+            dict.push_back({ "13. Advanced: K-Pop", "Minor to Major Borrow", 4, { {0, 4, 1, 4, 0, -1, -1, -1}, {4, 4, 4, 4, 0, 0, 1, -1}, {8, 4, 0, 4, 0, 0, 0, 0}, {12, 4, 5, 4, 0, 0, 0, -1} }, "iim7b5 - V7#5 - Imaj9 - VI7b9" });
+
+            // 8 Bars (11-20)
+            dict.push_back({ "15. Advanced: Gospel", "Cory Alt Turnaround", 8, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 6, 4, 0, -1, -1, -1}, {8, 4, 2, 4, 0, 0, 1, -1}, {12, 4, 5, 4, 0, -1, 0, -1}, {16, 4, 1, 4, 0, 0, 0, -1}, {20, 4, 4, 4, 0, 0, 0, -1}, {24, 4, 0, 4, 0, 0, 0, 0}, {28, 4, 0, 4, 0, 0, 0, -1} }, "Imaj9 - viim11b5 - III7#9 - vim11 - II9 - V13 - Imaj9 - I13sus" });
+            dict.push_back({ "14. Advanced: City Pop", "8-Bar Chorus Anthem", 8, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 2, 4, 0, -1, 0, -1}, {8, 4, 5, 4, 0, -1, 0, -1}, {12, 4, 0, 4, 0, 0, 0, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 4, 3, 4, 0, -1, 0, -1}, {24, 4, 2, 4, 0, -1, 0, -1}, {28, 4, 5, 4, 0, 0, 1, -1} }, "IVmaj9 - iiim11 - vim9 - I9 - IVmaj9 - ivm9 - iiim11 - VI7b13" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Silky Walkdown", 8, { {0, 4, 5, 4, 0, -1, 0, -1}, {4, 4, 5, 4, -1, -1, 0, -1}, {8, 4, 4, 4, 0, -1, 0, -1}, {12, 4, 4, 4, -1, -1, 0, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 4, 2, 4, 0, -1, 0, -1}, {24, 4, 1, 4, 0, -1, 0, -1}, {28, 4, 4, 4, 0, 0, 0, -1} }, "vim11 - bvim11 - vm11 - bvm11 - IVmaj9 - iiim11 - iim11 - V13sus" });
+            dict.push_back({ "13. Advanced: K-Pop", "Pre-Chorus Tension Build", 8, { {0, 4, 1, 4, 0, -1, 0, -1}, {4, 4, 4, 4, 0, 0, 0, -1}, {8, 4, 2, 4, 0, -1, 0, -1}, {12, 4, 5, 4, -1, 0, 0, 0}, {16, 4, 1, 4, 0, -1, 0, -1}, {20, 4, 3, 4, 0, -1, 0, -1}, {24, 4, 6, 4, -1, 0, 0, -1}, {28, 4, 4, 4, 0, 0, 1, -1} }, "iim9 - V13 - iiim11 - bVImaj9 - iim11 - ivm9 - bVII13 - V7alt" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Pedal Point Float", 8, { {0, 8, 0, 4, 0, 0, 0, 0}, {8, 8, 6, 4, -1, 0, 0, 0}, {16, 8, 5, 4, 0, -1, 0, -1}, {24, 4, 3, 4, 0, 0, 0, 0}, {28, 4, 4, 4, 0, 0, 0, -1} }, "Imaj9 - bVIImaj7#11 - vim11 - IVmaj9 - V13sus" });
+            dict.push_back({ "15. Advanced: Gospel", "Diminished Staircase", 8, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 0, 4, 1, -1, -1, -2}, {8, 4, 1, 4, 0, -1, 0, -1}, {12, 4, 1, 4, 1, -1, -1, -2}, {16, 4, 2, 4, 0, -1, 0, -1}, {20, 4, 5, 4, 0, 0, 1, -1}, {24, 4, 1, 4, 0, 0, 0, -1}, {28, 4, 4, 4, 0, 0, 0, -1} }, "Imaj9 - #Idim7 - iim11 - #IIdim7 - iiim11 - VI7#9 - II13 - V7b9" });
+            dict.push_back({ "13. Advanced: K-Pop", "Subverted Resolution", 8, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 4, 4, 0, 0, 0, -1}, {8, 4, 5, 4, 0, -1, 0, -1}, {12, 4, 0, 4, 0, 0, 1, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 4, 2, 4, 0, 0, 1, -1}, {24, 4, 2, 4, -1, 0, 0, 0}, {28, 4, 1, 4, -1, 0, 0, -1} }, "IVmaj9 - V13 - vim11 - I7alt - IVmaj9 - III7#9 - bIIImaj7 - bII13sus" });
+            dict.push_back({ "12. Advanced: Modern R&B", "90s Plush Expansion", 8, { {0, 4, 1, 4, 0, -1, 0, -1}, {4, 4, 2, 4, 0, -1, 0, -1}, {8, 4, 3, 4, 0, 0, 0, 0}, {12, 4, 4, 4, 0, 0, 0, -1}, {16, 4, 1, 4, 0, -1, 0, -1}, {20, 4, 2, 4, 0, -1, 0, -1}, {24, 4, 5, 4, 0, -1, 0, -1}, {28, 4, 5, 4, 0, 0, 0, -1} }, "iim9 - iiim11 - IVmaj9 - V13sus - iim9 - iiim11 - vim11 - VI13" });
+            dict.push_back({ "14. Advanced: City Pop", "Melancholic Verse Flow", 8, { {0, 8, 5, 4, 0, -1, 0, -1}, {8, 8, 1, 4, 0, -1, 0, -1}, {16, 4, 4, 4, 0, 0, 0, -1}, {20, 4, 4, 4, 0, 0, 0, -1}, {24, 8, 0, 4, 0, 0, 0, 0} }, "vim9 - iim11 - V13 - V7b9 - Imaj9" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Minor Key Odyssey", 8, { {0, 4, 0, 4, 0, -1, 0, -1}, {4, 4, 3, 4, 0, -1, 0, -1}, {8, 4, 6, 4, -1, 0, 0, -1}, {12, 4, 2, 4, -1, 0, 0, 0}, {16, 4, 5, 4, -1, 0, 0, 0}, {20, 4, 1, 4, 0, -1, -1, -1}, {24, 4, 4, 4, 0, 0, 1, -1}, {28, 4, 4, 4, 0, 0, 0, -1} }, "im11 - ivm9 - bVII13 - bIIImaj9 - bVImaj7 - iim7b5 - V7#9 - V7b9" });
+
+            // 12 Bars (21-30)
+            dict.push_back({ "16. Advanced: Jazz/R&B", "Modern Bird Blues", 12, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 2, 6, 4, 0, -1, -1, -1}, {6, 2, 2, 4, 0, 0, 0, -1}, {8, 2, 5, 4, 0, -1, 0, -1}, {10, 2, 1, 4, 0, 0, 0, -1}, {12, 2, 4, 4, 0, -1, 0, -1}, {14, 2, 0, 4, 0, 0, 0, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 2, 3, 4, 0, -1, 0, -1}, {22, 2, 6, 4, -1, 0, 0, -1}, {24, 2, 2, 4, 0, -1, 0, -1}, {26, 2, 5, 4, 0, 0, 0, -1}, {28, 2, 2, 4, -1, -1, 0, -1}, {30, 2, 5, 4, -1, 0, 0, -1}, {32, 4, 1, 4, 0, -1, 0, -1}, {36, 4, 4, 4, 0, 0, 1, -1}, {40, 4, 0, 4, 0, 0, 0, 0}, {44, 4, 4, 4, 0, 0, 0, -1} }, "Imaj9 - viim7b5/III7b9 - vim11/II9 - vm11/I13 - IVmaj9 - ivm9/bVII13 - iiim11/VI7 - bIIIm11/bVI13 - iim11 - V13alt - Imaj9" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Modal Minor Blues", 12, { {0, 16, 0, 4, 0, -1, 0, -1}, {16, 8, 3, 4, 0, -1, 0, -1}, {24, 8, 0, 4, 0, -1, 0, -1}, {32, 4, 1, 4, 0, -1, 0, -1}, {36, 4, 1, 4, -1, 0, 0, -1}, {40, 8, 0, 4, 0, -1, 0, -1} }, "im11 - ivm11 - im11 - iim11 - bII9#11 - im11" });
+            dict.push_back({ "15. Advanced: Gospel", "12-Bar Church Groove", 12, { {0, 4, 0, 4, 0, 0, 0, -1}, {4, 4, 3, 4, 0, 0, 0, -1}, {8, 4, 0, 4, 0, 0, 0, -1}, {12, 4, 4, 4, 0, -1, 0, -1}, {16, 4, 3, 4, 0, 0, 0, -1}, {20, 4, 3, 4, 1, -1, -1, -2}, {24, 4, 0, 4, 0, 0, 0, -1}, {28, 4, 5, 4, 0, 0, 1, -1}, {32, 4, 1, 4, 0, 0, 0, -1}, {36, 4, 4, 4, 0, 0, 0, -1}, {40, 4, 0, 4, 0, 0, 0, -1}, {44, 4, 4, 4, 0, 0, 1, -1} }, "I13 - IV9 - I13 - vm11 - IV13 - #IVdim7 - I13 - VI7#9 - II9 - V13 - I13 - V7#5" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Smooth 12-Bar Cycle", 12, { {0, 8, 3, 4, 0, 0, 0, 0}, {8, 8, 2, 4, 0, -1, 0, -1}, {16, 8, 1, 4, 0, -1, 0, -1}, {24, 8, 0, 4, 0, 0, 0, 0}, {32, 4, 3, 4, 0, 0, 0, 0}, {36, 4, 3, 4, 0, -1, 0, -1}, {40, 8, 0, 4, 0, 0, 0, 0} }, "IVmaj9 - iiim11 - iim9 - Imaj9 - IVmaj9 - ivm9 - Imaj9" });
+            dict.push_back({ "14. Advanced: City Pop", "12-Bar Bridge Build", 12, { {0, 8, 5, 4, 0, -1, 0, -1}, {8, 8, 2, 4, 0, -1, 0, -1}, {16, 8, 3, 4, 0, 0, 0, 0}, {24, 8, 0, 4, 0, 0, 0, 0}, {32, 4, 1, 4, 0, -1, 0, -1}, {36, 4, 2, 4, 0, -1, 0, -1}, {40, 4, 3, 4, 0, 0, 0, 0}, {44, 4, 4, 4, 0, 0, 0, -1} }, "vim9 - iiim11 - IVmaj9 - Imaj9 - iim11 - iiim11 - IVmaj9 - V13sus" });
+            dict.push_back({ "13. Advanced: K-Pop", "Narrative Arc 12-Bar", 12, { {0, 8, 0, 4, 0, -1, 0, -1}, {8, 8, 5, 4, -1, 0, 0, 0}, {16, 8, 6, 4, -1, 0, 0, -1}, {24, 8, 2, 4, -1, 0, 0, 0}, {32, 4, 3, 4, 0, -1, 0, -1}, {36, 4, 0, 4, 0, -1, 0, -1}, {40, 4, 1, 4, 0, -1, -1, -1}, {44, 4, 4, 4, 0, 0, 1, -1} }, "im11 - bVImaj9 - bVII13 - bIIImaj9 - ivm9 - im11 - iim7b5 - V7alt" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Diminished Ascend 12-Bar", 12, { {0, 8, 1, 4, 0, -1, 0, -1}, {8, 8, 1, 4, 1, -1, -1, -2}, {16, 8, 2, 4, 0, -1, 0, -1}, {24, 8, 2, 4, 0, 0, 0, -1}, {32, 8, 3, 4, 0, 0, 0, 0}, {40, 8, 4, 4, 0, 0, 0, -1} }, "iim9 - #IIdim7 - iiim11 - III13 - IVmaj9 - V13sus" });
+            dict.push_back({ "16. Advanced: Jazz/R&B", "Tritone Matrix", 12, { {0, 8, 0, 4, 0, 0, 0, 0}, {8, 8, 1, 4, -1, 0, 0, -1}, {16, 8, 1, 4, 0, -1, 0, -1}, {24, 8, 2, 4, -1, 0, 0, -1}, {32, 8, 2, 4, 0, -1, 0, -1}, {40, 8, 5, 4, 0, 0, 1, -1} }, "Imaj9 - bII7#11 - iim11 - bIII7#11 - iiim11 - VI7b13" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Lydian Float", 12, { {0, 16, 3, 4, 0, 0, 0, 0}, {16, 16, 0, 4, 0, 0, 0, 0}, {32, 8, 1, 4, 0, -1, 0, -1}, {40, 8, 4, 4, 0, 0, 0, -1} }, "IVmaj7#11 (4 bars) - Imaj9 (4 bars) - iim11 (2 bars) - V13 (2 bars)" });
+            dict.push_back({ "15. Advanced: Gospel", "Altered Praise Vamp", 12, { {0, 8, 0, 4, 0, 0, 1, -1}, {8, 8, 3, 4, 0, 0, 0, -1}, {16, 8, 0, 4, 0, 0, 1, -1}, {24, 8, 3, 4, 0, 0, 0, -1}, {32, 4, 2, 4, 0, 0, 1, -1}, {36, 4, 5, 4, 0, 0, 1, -1}, {40, 4, 1, 4, 0, 0, 0, -1}, {44, 4, 4, 4, 0, 0, 1, -1} }, "I7#9 - IV13 - I7#9 - IV13 - III7#9 - VI7#9 - II9 - V13alt" });
+
+            // 16 Bars (31-40)
+            dict.push_back({ "15. Advanced: Gospel", "Congregational Epic", 16, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 3, 4, 0, 0, 0, 0}, {8, 4, 0, 4, 0, 0, 0, 0}, {12, 4, 2, 4, 0, -1, -1, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 4, 3, 4, 1, -1, -1, -2}, {24, 4, 0, 4, 0, 0, 0, 0}, {28, 4, 5, 4, 0, 0, 1, -1}, {32, 4, 1, 4, 0, 0, 0, -1}, {36, 4, 4, 4, 0, 0, 0, -1}, {40, 4, 2, 4, 0, -1, 0, -1}, {44, 4, 5, 4, 0, 0, 0, -1}, {48, 4, 1, 4, 0, -1, 0, -1}, {52, 4, 4, 4, 0, 0, 0, -1}, {56, 4, 0, 4, 0, 0, 0, 0}, {60, 4, 4, 4, 0, 0, 1, -1} }, "Imaj9 - IVmaj9 - Imaj9 - iiim11b5 - IVmaj9 - #IVdim7 - Imaj9 - VI7#9 - II9 - V13 - iiim11 - VI7b9 - iim11 - V13sus - Imaj9 - V7alt" });
+            dict.push_back({ "13. Advanced: K-Pop", "Verse to Chorus Odyssey", 16, { {0, 8, 5, 4, 0, -1, 0, -1}, {8, 8, 3, 4, 0, 0, 0, 0}, {16, 8, 1, 4, 0, -1, 0, -1}, {24, 8, 2, 4, 0, -1, 0, -1}, {32, 4, 3, 4, 0, 0, 0, 0}, {36, 4, 4, 4, 0, 0, 0, -1}, {40, 4, 2, 4, 0, -1, 0, -1}, {44, 4, 5, 4, 0, -1, 0, -1}, {48, 4, 1, 4, 0, -1, 0, -1}, {52, 4, 3, 4, 0, -1, 0, -1}, {56, 8, 0, 4, 0, 0, 0, 0} }, "vim9 - IVmaj9 - iim11 - iiim11 - IVmaj9 - V13 - iiim11 - vim9 - iim9 - ivm9 - Imaj9" });
+            dict.push_back({ "14. Advanced: City Pop", "16-Bar Masterpiece", 16, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 2, 4, 0, -1, 0, -1}, {8, 4, 5, 4, 0, -1, 0, -1}, {12, 4, 0, 4, 0, 0, 0, -1}, {16, 4, 3, 4, 0, 0, 0, 0}, {20, 4, 3, 4, 1, -1, -1, -2}, {24, 4, 2, 4, 0, -1, 0, -1}, {28, 4, 5, 4, 0, 0, 1, -1}, {32, 4, 1, 4, 0, -1, 0, -1}, {36, 4, 2, 4, 0, -1, 0, -1}, {40, 4, 3, 4, 0, 0, 0, 0}, {44, 4, 4, 4, 0, 0, 0, -1}, {48, 8, 0, 4, 0, 0, 0, 0}, {56, 8, 0, 4, 0, 0, 1, -1} }, "IVmaj9 - iiim11 - vim9 - I9 - IVmaj9 - #IVdim7 - iiim11 - VI7b13 - iim9 - iiim11 - IVmaj9 - V13sus - Imaj9 - I7alt" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Ballad Epic", 16, { {0, 8, 3, 4, 0, 0, 0, 0}, {8, 8, 2, 4, 0, -1, 0, -1}, {16, 8, 1, 4, 0, -1, 0, -1}, {24, 8, 0, 4, 0, 0, 0, 0}, {32, 8, 3, 4, 0, -1, 0, -1}, {40, 8, 2, 4, 0, -1, 0, -1}, {48, 8, 1, 4, 0, -1, 0, -1}, {56, 8, 6, 4, -1, 0, 0, -1} }, "IVmaj9 - iiim11 - iim9 - Imaj9 - ivm9 - iiim11 - iim11 - bVII13" });
+            dict.push_back({ "11. Advanced: Neo-Soul", "Harmonic Maze", 16, { {0, 8, 0, 4, 0, -1, 0, -1}, {8, 8, 3, 4, 0, 0, 0, -1}, {16, 8, 2, 4, -1, 0, 0, 0}, {24, 8, 5, 4, -1, 0, 0, 0}, {32, 8, 1, 4, 0, -1, 0, -1}, {40, 8, 4, 4, 0, 0, 0, -1}, {48, 8, 0, 4, 0, 0, 0, 0}, {56, 8, 4, 4, 0, 0, 0, -1} }, "im11 - IV13 - bIIImaj9 - bVImaj7#11 - iim9 - V13 - Imaj9 - V7b9" });
+            dict.push_back({ "16. Advanced: Jazz/R&B", "Constant Structure Shift", 16, { {0, 4, 0, 4, 0, 0, 0, 0}, {4, 4, 1, 4, -1, 0, 0, 0}, {8, 4, 1, 4, 0, 0, 0, 0}, {12, 4, 2, 4, -1, 0, 0, 0}, {16, 4, 2, 4, 0, 0, 0, 0}, {20, 4, 3, 4, 0, 0, 0, 0}, {24, 4, 4, 4, 0, 0, 0, 0}, {28, 4, 5, 4, -1, 0, 0, 0}, {32, 16, 5, 4, 0, -1, 0, -1}, {48, 16, 4, 4, 0, 0, 0, -1} }, "Imaj9 - bIImaj9 - IImaj9 - bIIImaj9 - IIImaj9 - IVmaj9 - Vmaj9 - bVImaj9 - vim11 - V13sus" });
+            dict.push_back({ "13. Advanced: K-Pop", "SM Style Bold Shifts", 16, { {0, 8, 5, 4, 0, -1, 0, -1}, {8, 8, 2, 4, 0, -1, 0, -1}, {16, 8, 3, 4, 0, 0, 0, 0}, {24, 8, 0, 4, 0, 0, 0, 0}, {32, 8, 5, 4, 0, 0, 0, 0}, {40, 8, 2, 4, 0, 0, 0, 0}, {48, 8, 3, 4, 0, -1, 0, -1}, {56, 8, 4, 4, 0, 0, 1, -1} }, "vim9 - iiim11 - IVmaj9 - Imaj9 - VImaj9 - IIImaj9 - ivm9 - V7alt" });
+            dict.push_back({ "12. Advanced: Modern R&B", "Macro 2-5-1 Sequence", 16, { {0, 8, 2, 4, 0, -1, 0, -1}, {8, 8, 5, 4, 0, 0, 0, -1}, {16, 8, 1, 4, 0, -1, 0, -1}, {24, 8, 4, 4, 0, 0, 0, -1}, {32, 8, 0, 4, 0, 0, 0, 0}, {40, 8, 3, 4, 0, 0, 0, 0}, {48, 8, 6, 4, 0, -1, -1, -1}, {56, 8, 2, 4, 0, 0, 1, -1} }, "iiim11 - VI13 - iim11 - V13 - Imaj9 - IVmaj9 - viim7b5 - III7#9" });
+            dict.push_back({ "15. Advanced: Gospel", "Minor Praise Epic", 16, { {0, 4, 0, 4, 0, -1, 0, -1}, {4, 4, 0, 4, 0, -1, 0, -1}, {8, 4, 3, 4, 0, -1, 0, -1}, {12, 4, 3, 4, 0, -1, 0, -1}, {16, 4, 6, 4, -1, 0, 0, -1}, {20, 4, 6, 4, -1, 0, 0, -1}, {24, 4, 2, 4, -1, 0, 0, 0}, {28, 4, 2, 4, -1, 0, 0, 0}, {32, 4, 5, 4, -1, 0, 0, 0}, {36, 4, 5, 4, -1, 0, 0, 0}, {40, 4, 1, 4, 0, -1, -1, -1}, {44, 4, 1, 4, 0, -1, -1, -1}, {48, 8, 4, 4, 0, 0, 1, -1}, {56, 8, 4, 4, 0, 0, 0, -1} }, "im11 - ivm9 - bVII13 - bIIImaj9 - bVImaj7 - iim7b5 - V7#9 - V7b9" });
+            dict.push_back({ "14. Advanced: City Pop", "Grand Finale Outro", 16, { {0, 4, 3, 4, 0, 0, 0, 0}, {4, 4, 4, 4, 0, 0, 0, -1}, {8, 4, 2, 4, 0, -1, 0, -1}, {12, 4, 5, 4, 0, -1, 0, -1}, {16, 4, 1, 4, 0, -1, 0, -1}, {20, 4, 2, 4, 0, -1, 0, -1}, {24, 8, 3, 4, 0, 0, 0, 0}, {32, 4, 3, 4, 0, -1, 0, -1}, {36, 4, 6, 4, -1, 0, 0, -1}, {40, 4, 2, 4, 0, -1, 0, -1}, {44, 4, 5, 4, 0, 0, 1, -1}, {48, 8, 1, 4, 0, 0, 0, -1}, {56, 8, 1, 4, -1, -1, 0, -1} }, "IVmaj9 - V13 - iiim11 - vim9 - iim9 - iiim11 - IVmaj9 - ivm9 - bVII13 - iiim11 - VI7b13 - II13 - bIIm11" });
         }
         return dict;
     }
