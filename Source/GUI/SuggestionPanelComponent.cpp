@@ -1,5 +1,6 @@
 #include "SuggestionPanelComponent.h"
 #include "../Engine/MusicTheory.h"
+#include "../Engine/VoicingEngine.h"
 
 namespace ChordMatrix {
 
@@ -21,12 +22,9 @@ namespace ChordMatrix {
             return;
         }
 
-        const auto& sData = audioProcessor.sequenceData[currentStep];
+        // ★修正: 対象のステップだけでなく、シーケンス全体を渡してコンテキストを解析させる
+        currentSuggestions = ProgressionEngine::suggestNextChords(audioProcessor.sequenceData, currentStep, ppqPerStep);
 
-        // ProgressionEngine の AIサジェストロジックを呼び出し
-        currentSuggestions = ProgressionEngine::suggestNextChords(sData.chordDegree, sData.scaleType);
-
-        // 確率(重み)の高い順にソート
         std::sort(currentSuggestions.begin(), currentSuggestions.end(),
             [](const ChordSuggestion& a, const ChordSuggestion& b) {
                 return a.probability > b.probability;
@@ -41,21 +39,24 @@ namespace ChordMatrix {
         for (int i = 0; i < (int)currentSuggestions.size(); ++i) {
             const auto& sug = currentSuggestions[i];
 
-            // UI表示用の度数とスケール名の生成
             juce::String degName = MusicTheory::getDegreeNames()[sug.targetDegree];
             juce::String labelText = degName + " (" + sug.reasoning + ")";
 
-            auto* btn = new juce::TextButton(labelText);
+            auto* btn = new SuggestionButton(labelText);
 
-            // グループ（確率・意味合い）に応じて色分け
             juce::Colour btnColor = juce::Colours::cyan;
             if (sug.reasoning.contains("Neo-Riemannian")) btnColor = juce::Colours::hotpink;
-            else if (sug.reasoning.contains("Deceptive") || sug.reasoning.contains("Sub")) btnColor = juce::Colours::yellow;
+            else if (sug.reasoning.contains("Target") || sug.reasoning.contains("Approach")) btnColor = juce::Colours::yellow;
 
             btn->setColour(juce::TextButton::buttonColourId, btnColor.withAlpha(0.2f));
             btn->setColour(juce::TextButton::textColourOffId, btnColor);
 
-            btn->onClick = [this, sug] { applySuggestion(sug); };
+            // ★修正: 左右のクリックイベントを個別にバインド
+            btn->onLeftClick = [this, sug] { applySuggestion(sug); };
+            btn->onRightClick = [this, sug] { previewSuggestion(sug); };
+
+            // ツールチップで操作ヒントを表示
+            btn->setTooltip("Left Click: Apply & Next Step | Right Click: Preview Chord");
 
             addAndMakeVisible(btn);
             suggestionButtons.add(btn);
@@ -64,41 +65,66 @@ namespace ChordMatrix {
         repaint();
     }
 
+    // ★新規追加: 右クリック時の和音プレビュー機能
+    void SuggestionPanelComponent::previewSuggestion(const ChordSuggestion& sug) {
+        if (currentStep < 0) return;
+
+        // 仮想のステップデータを構築してシミュレーションする
+        StepData dummyStep;
+        dummyStep.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
+        dummyStep.scaleType = sug.targetScale;
+        dummyStep.chordDegree = sug.targetDegree;
+        dummyStep.voicingMode = 4; // Rootless A で最も無難なプレビュー
+        dummyStep.shift = audioProcessor.sequenceData[currentStep].shift;
+
+        for (int v = 0; v < 4; ++v) dummyStep.voices[v].isActive = true;
+
+        std::array<int, 7> vps = { 0 };
+        int count = VoicingEngine::getVoicedPitches(dummyStep, vps);
+
+        for (int i = 0; i < 7; ++i) {
+            audioProcessor.previewNotes[i].store(i < count ? juce::jlimit(0, 127, vps[i]) : -1);
+        }
+        audioProcessor.triggerPreview.store(true);
+    }
+
+    // ★修正: 左クリック時、ステップ幅に合わせて「次へ」進みながら挿入・上書きする連続配置ロジック
     void SuggestionPanelComponent::applySuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        // デフォルトでは次のステップへ（必要に応じて拍単位にジャンプさせる計算も可能）
-        int nextStep = currentStep + 1;
+        // 現在のUI解像度（ステップ幅）の分だけ内部ステップを進める
+        int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
+        int nextStep = currentStep + internalStepMultiplier;
 
-        // 既存のノートと被らないように空きステップを探す簡易ロジック
-        bool foundEmpty = false;
-        while (nextStep < TotalSteps) {
-            bool hasNotes = false;
-            for (int v = 0; v < 7; ++v) {
-                if (audioProcessor.sequenceData[nextStep].voices[v].isActive) hasNotes = true;
-            }
-            if (!hasNotes) {
-                foundEmpty = true;
-                break;
-            }
-            nextStep++;
-        }
-
-        if (foundEmpty && nextStep < TotalSteps) {
+        if (nextStep < TotalSteps) {
             auto& sData = audioProcessor.sequenceData[nextStep];
 
-            // 直前のステップからKeyを引き継ぎつつ、提案されたDegreeとScaleをセット
-            sData.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
-            sData.chordDegree = sug.targetDegree;
-            sData.scaleType = sug.targetScale;
+            // ロックされていなければ上書き挿入する
+            if (!sData.isLocked) {
+                sData.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
+                sData.chordDegree = sug.targetDegree;
+                sData.scaleType = sug.targetScale;
 
-            // デフォルトボイシング（Rootless Aなど無難なものをセット）
-            sData.voicingMode = 4;
-            for (int v = 0; v < 4; ++v) sData.voices[v].isActive = true;
+                sData.voicingMode = 4; // デフォルトは Rootless A
 
-            audioProcessor.previewSequenceData[nextStep] = sData;
+                // ★修正: 挿入時の長さをUIのStep設定に完全に準拠させる
+                sData.gateLength = currentPpqPerStep;
 
-            if (onSuggestionApplied) onSuggestionApplied(nextStep);
+                for (int v = 0; v < 7; ++v) {
+                    sData.voices[v].isActive = false;
+                    sData.voices[v].octaveShift = 0;
+                    sData.voices[v].accidental = 0;
+                }
+                for (int v = 0; v < 4; ++v) sData.voices[v].isActive = true;
+
+                // 挿入直後に1度最適化をかけ、直前の和音とボイスリーディングを滑らかに繋ぐ
+                VoicingEngine::optimizeStep(audioProcessor.sequenceData, nextStep, 0.25f, 0);
+
+                audioProcessor.previewSequenceData[nextStep] = sData;
+
+                // 適用完了後、UIのフォーカスを新しいステップに移動させる（連続打鍵が可能に）
+                if (onSuggestionApplied) onSuggestionApplied(nextStep);
+            }
         }
     }
 
@@ -109,7 +135,10 @@ namespace ChordMatrix {
 
         g.setColour(juce::Colours::grey);
         g.setFont(14.0f);
-        g.drawText("AI CHORD SUGGESTIONS (Next Move)", 10, 5, 300, 20, juce::Justification::centredLeft);
+
+        // ヘッダーテキストに操作ヒントを追記
+        g.drawText("AI CHORD SUGGESTIONS (L-Click: Insert & Next | R-Click: Preview)",
+            10, 5, 500, 20, juce::Justification::centredLeft);
 
         if (currentSuggestions.empty()) {
             g.drawText("Select a valid chord step to see suggestions.", 10, 30, 300, 20, juce::Justification::centredLeft);
@@ -119,26 +148,24 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::resized() {
         if (suggestionButtons.isEmpty()) return;
 
-        // 全3行でフレックスに配置する簡易グリッド計算
         int startX = 10;
         int startY = 30;
         int btnHeight = 25;
         int spacing = 10;
-        int maxRows = 3;
+        int maxRows = 4;
 
         int currentX = startX;
         int currentY = startY;
         int rowCount = 0;
 
         for (auto* btn : suggestionButtons) {
-            // 文字列長からボタン幅を推測
-            int btnWidth = 120 + btn->getButtonText().length() * 5;
+            int btnWidth = 100 + btn->getButtonText().length() * 5;
 
             if (currentX + btnWidth > getWidth() - 10) {
                 currentX = startX;
                 currentY += btnHeight + spacing;
                 rowCount++;
-                if (rowCount >= maxRows) break; // 3行までに制限
+                if (rowCount >= maxRows) break;
             }
 
             btn->setBounds(currentX, currentY, btnWidth, btnHeight);

@@ -63,10 +63,13 @@ namespace ChordMatrix
             int targetBar, int targetKey, int targetScale, int method,
             int stepsPerBar, int stepsPerBeat, float ppqPerStep);
 
+        // ------------------------------------------------------------
+        // 変更後 (ProgressionEngine.h)
+        // ------------------------------------------------------------
         static const std::vector<ProgressionPreset>& getProgressionDictionary();
         static juce::StringArray getModulationNames();
 
-        // ★修正: マルコフ連鎖に基づく構造的なサジェスト予測API
-        static std::vector<ChordSuggestion> suggestNextChords(int currentDegree, int scaleType);
+        // ★修正: シーケンス全体を渡し、前後の文脈を解析して推論するシグネチャに変更
+        static std::vector<ChordSuggestion> suggestNextChords(const std::array<StepData, TotalSteps>& seq, int currentStep, float ppqPerStep);
     };
 }

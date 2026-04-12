@@ -114,53 +114,63 @@ namespace ChordMatrix {
         int tsNum = (int)*audioProcessor.apvts.getRawParameterValue("timeSigNum");
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-        int stepSizeIdx = (int)*audioProcessor.apvts.getRawParameterValue("stepSize");
-        float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 
-        float beatsPerBar = (float)tsNum * (4.0f / (float)tsDen);
-        int stepsPerBar = std::max(1, juce::roundToInt(beatsPerBar / ppqPerStep));
-        float ppqPerBeat = 4.0f / (float)tsDen;
-        int stepsPerBeat = std::max(1, juce::roundToInt(ppqPerBeat / ppqPerStep));
+        // =========================================================================
+        // ★修正: 挿入時の位置計算を、UIの表示状態(Step)に依存させず、
+        // 常に内部解像度（0.25 PPQ = 1/16音符）ベースで正確に計算・配置する
+        // =========================================================================
+        float internalPpqPerStep = 0.25f;
+        float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
+        int internalStepsPerBar = std::max(1, juce::roundToInt(beatsPerBar / internalPpqPerStep));
 
+        float ppqPerBeat = 4.0f / static_cast<float>(tsDen);
+        int internalStepsPerBeat = std::max(1, juce::roundToInt(ppqPerBeat / internalPpqPerStep));
+
+        // まず、挿入先の小節範囲を内部解像度ベースでクリア・初期化する
         for (int b = 0; b < preset.numBars; ++b) {
             int targetBar = editBar + b;
             if (targetBar >= 16) break;
 
-            int barStartStep = targetBar * stepsPerBar;
-            for (int s = 0; s < stepsPerBar; ++s) {
+            int barStartStep = targetBar * internalStepsPerBar;
+            for (int s = 0; s < internalStepsPerBar; ++s) {
                 int step = barStartStep + s;
                 auto& sData = audioProcessor.sequenceData[step];
-                sData.inversion = 0;
-                sData.shift = 0;
-                sData.voicingMode = 0;
 
-                for (int v = 0; v < 7; ++v) {
-                    sData.voices[v].isActive = false;
-                    sData.voices[v].octaveShift = 0;
-                    sData.voices[v].accidental = 0;
-                }
+                // 既存のロック状態は保持しつつ、それ以外をクリア
+                bool wasLocked = sData.isLocked;
+                sData = {};
+                sData.isLocked = wasLocked;
+
                 audioProcessor.previewSequenceData[step] = sData;
             }
         }
 
-        int baseKey = audioProcessor.sequenceData[editBar * stepsPerBar].keyRoot;
-        int baseScale = audioProcessor.sequenceData[editBar * stepsPerBar].scaleType;
+        // ベースとなるKeyとScaleを取得（挿入開始位置のものを引き継ぐ）
+        int baseKey = audioProcessor.sequenceData[editBar * internalStepsPerBar].keyRoot;
+        int baseScale = audioProcessor.sequenceData[editBar * internalStepsPerBar].scaleType;
 
+        // プリセットの各和音を、内部解像度（0.25 PPQ）の正確なステップ位置に配置する
         for (const auto& chord : preset.chords) {
-            int targetBar = editBar + (chord.startBeat / (int)beatsPerBar);
+            int targetBar = editBar + (chord.startBeat / static_cast<int>(beatsPerBar));
             if (targetBar >= 16) continue;
 
-            int targetStep = targetBar * stepsPerBar + (chord.startBeat % (int)beatsPerBar) * stepsPerBeat;
+            int targetStep = targetBar * internalStepsPerBar + (chord.startBeat % static_cast<int>(beatsPerBar)) * internalStepsPerBeat;
 
             if (targetStep < ChordMatrix::TotalSteps) {
                 auto& sData = audioProcessor.sequenceData[targetStep];
+
+                // ロックされているステップには上書きしない
+                if (sData.isLocked) continue;
+
                 sData.keyRoot = baseKey;
                 sData.scaleType = baseScale;
                 sData.chordDegree = chord.chordDegree;
                 sData.voicingMode = chord.voicingMode;
-                sData.gateLength = chord.lengthBeats * ppqPerBeat;
+                // gateLength は拍（Beat）数ベースで定義されているため、そのままPPQ長さに変換
+                sData.gateLength = static_cast<float>(chord.lengthBeats) * ppqPerBeat;
 
                 bool isAuto = VoicingEngine::isAutoPattern(chord.voicingMode);
+
                 sData.voices[0].isActive = (chord.accRoot != -128);
                 sData.voices[0].accidental = (chord.accRoot == -128) ? 0 : chord.accRoot;
                 sData.voices[0].octaveShift = (chord.accRoot == -128 && isAuto) ? -128 : 0;

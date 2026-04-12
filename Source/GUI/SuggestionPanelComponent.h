@@ -7,6 +7,24 @@
 
 namespace ChordMatrix {
 
+    // ★新規追加: 右クリック（プレビュー）と左クリック（適用）を区別するカスタムボタン
+    class SuggestionButton : public juce::TextButton {
+    public:
+        SuggestionButton(const juce::String& name) : juce::TextButton(name) {}
+
+        std::function<void()> onLeftClick;
+        std::function<void()> onRightClick;
+
+        void clicked(const juce::ModifierKeys& modifiers) override {
+            if (modifiers.isPopupMenu()) {
+                if (onRightClick) onRightClick(); // 右クリックでプレビュー
+            }
+            else {
+                if (onLeftClick) onLeftClick();   // 左クリックで適用
+            }
+        }
+    };
+
     class SuggestionPanelComponent : public juce::Component
     {
     public:
@@ -16,10 +34,8 @@ namespace ChordMatrix {
         void paint(juce::Graphics& g) override;
         void resized() override;
 
-        // 選択されたステップに基づきサジェストリストを更新
         void updateSuggestions(int targetStep, float ppqPerStep, int stepsPerBar);
 
-        // サジェストが選択・適用された際、親(MatrixGrid)へ通知するコールバック
         std::function<void(int newSelectedStep)> onSuggestionApplied;
 
     private:
@@ -31,11 +47,12 @@ namespace ChordMatrix {
 
         std::vector<ChordSuggestion> currentSuggestions;
 
-        // メッセージスレッドで安全にボタンを再生成して保持
-        juce::OwnedArray<juce::TextButton> suggestionButtons;
+        // ★修正: カスタムボタンクラスに変更
+        juce::OwnedArray<SuggestionButton> suggestionButtons;
 
         void buildButtons();
         void applySuggestion(const ChordSuggestion& sug);
+        void previewSuggestion(const ChordSuggestion& sug);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SuggestionPanelComponent)
     };
