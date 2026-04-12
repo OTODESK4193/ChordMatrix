@@ -20,13 +20,13 @@ namespace ChordMatrix {
         progressionBrowser.onApplyPreset = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
-            resized(); // ★修正: ブラウザを閉じた後にUIを再計算し、サジェストパネルを再表示させる
+            resized(); // ★先祖返りで消えていた修正を復活。提案パネルを確実に再表示させます。
             if (onRepaintRequest) onRepaintRequest();
             };
         progressionBrowser.onCancel = [this]() {
             isProgressionMode = false;
             progressionBrowser.setVisible(false);
-            resized(); // ★修正: ここにも追加
+            resized(); // ★ここにも復活。
             repaint();
             };
         progressionBrowser.setVisible(false);
@@ -145,6 +145,7 @@ namespace ChordMatrix {
     void MatrixGridComponent::setProgressionMode(bool isProg) {
         isProgressionMode = isProg;
         progressionBrowser.setVisible(isProgressionMode);
+        resized(); // ★念のためここにも追加して、モード切り替え時のUIレイアウト更新を徹底します
         repaint();
     }
 
@@ -231,6 +232,7 @@ namespace ChordMatrix {
 
         progressionBrowser.setBounds(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f);
 
+        // ★UIレイアウトの司令塔: ここで「提案パネルを出すべきか」が判定されています
         bool showSuggest = !isModulationPanelOpen && !isProgressionMode && !isMemoryModeOpen;
         suggestionPanel.setVisible(showSuggest);
         suggestionPanel.setBounds(leftMargin, 625.0f, seqTotalWidth, 150.0f);
@@ -336,6 +338,7 @@ namespace ChordMatrix {
 
         const auto& activeSeqData = audioProcessor.isPlayingModulationPreview.load() ? audioProcessor.previewSequenceData : audioProcessor.sequenceData;
 
+        // 空グリッド背景の描画
         for (int s = 0; s < uiStepsPerBar; ++s) {
             for (int v = 0; v < 7; ++v) {
                 auto bounds = getCellBounds(s, v, stepW).reduced(1.0f, 1.0f);
@@ -350,6 +353,7 @@ namespace ChordMatrix {
             g.drawLine(leftMargin + static_cast<float>(s) * stepW, 155.0f - 5.0f, leftMargin + static_cast<float>(s) * stepW, 155.0f + (8.0f * cellHeight), (s % uiStepsPerBeat == 0) ? 2.0f : 1.0f);
         }
 
+        // ノートおよびヘッダー・フッターの描画
         for (int s = 0; s < uiStepsPerBar; ) {
             int internalS = getInternalStep(editBar, s);
             int effS = getEffectiveStep(internalS);
@@ -776,6 +780,20 @@ namespace ChordMatrix {
                 auto& targetStep = audioProcessor.sequenceData[internalS];
                 if (targetStep.isLocked) return;
 
+                for (int prevS = internalS - 1; prevS >= 0; --prevS) {
+                    bool prevHasNotes = false;
+                    for (int vi = 0; vi < 7; ++vi) {
+                        if (audioProcessor.sequenceData[prevS].voices[vi].isActive) { prevHasNotes = true; break; }
+                    }
+                    if (prevHasNotes) {
+                        float dist = static_cast<float>(internalS - prevS) * 0.25f;
+                        if (audioProcessor.sequenceData[prevS].gateLength > dist) {
+                            audioProcessor.sequenceData[prevS].gateLength = dist;
+                        }
+                        break;
+                    }
+                }
+
                 if (VoicingEngine::isAutoPattern(targetStep.voicingMode)) {
                     std::array<int, 7> dummy = { 0 };
                     int currentMaxV = VoicingEngine::getPatternBPitches(targetStep, dummy);
@@ -788,6 +806,13 @@ namespace ChordMatrix {
                         if (wasEmpty) {
                             for (int i = 0; i < currentMaxV; ++i) targetStep.voices[i].isActive = true;
                             targetStep.gateLength = getPpqPerStep();
+
+                            int clearSteps = juce::roundToInt(targetStep.gateLength / 0.25f);
+                            for (int i = 1; i < clearSteps; ++i) {
+                                if (internalS + i < TotalSteps && !audioProcessor.sequenceData[internalS + i].isLocked) {
+                                    audioProcessor.sequenceData[internalS + i] = {};
+                                }
+                            }
                         }
                         else {
                             targetStep.voices[voiceIdx].isActive = true;
@@ -812,6 +837,13 @@ namespace ChordMatrix {
                     targetStep.voices[voiceIdx].isActive = true;
                     if (wasEmpty) {
                         targetStep.gateLength = getPpqPerStep();
+
+                        int clearSteps = juce::roundToInt(targetStep.gateLength / 0.25f);
+                        for (int i = 1; i < clearSteps; ++i) {
+                            if (internalS + i < TotalSteps && !audioProcessor.sequenceData[internalS + i].isLocked) {
+                                audioProcessor.sequenceData[internalS + i] = {};
+                            }
+                        }
                     }
 
                     audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, VoicingEngine::getPitchForVoice(targetStep, voiceIdx)));
@@ -949,8 +981,30 @@ namespace ChordMatrix {
                     }
 
                     if (targetEmpty) {
+                        for (int prevS = targetStep - 1; prevS >= 0; --prevS) {
+                            bool prevHasNotes = false;
+                            for (int v = 0; v < 7; ++v) {
+                                if (audioProcessor.sequenceData[prevS].voices[v].isActive) { prevHasNotes = true; break; }
+                            }
+                            if (prevHasNotes) {
+                                float dist = static_cast<float>(targetStep - prevS) * 0.25f;
+                                if (audioProcessor.sequenceData[prevS].gateLength > dist) {
+                                    audioProcessor.sequenceData[prevS].gateLength = dist;
+                                }
+                                break;
+                            }
+                        }
+
                         audioProcessor.sequenceData[targetStep] = audioProcessor.sequenceData[dragStep];
                         audioProcessor.sequenceData[dragStep] = {};
+
+                        int clearSteps = juce::roundToInt(audioProcessor.sequenceData[targetStep].gateLength / 0.25f);
+                        for (int i = 1; i < clearSteps; ++i) {
+                            if (targetStep + i < TotalSteps && !audioProcessor.sequenceData[targetStep + i].isLocked) {
+                                audioProcessor.sequenceData[targetStep + i] = {};
+                            }
+                        }
+
                         dragStep = targetStep;
                         dragStartX += static_cast<float>(deltaUiSteps) * stepW;
 

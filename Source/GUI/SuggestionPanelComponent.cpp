@@ -69,7 +69,7 @@ namespace ChordMatrix {
         dummyStep.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
         dummyStep.scaleType = sug.targetScale;
         dummyStep.chordDegree = sug.targetDegree;
-        dummyStep.voicingMode = 4; // Rootless A で最も無難なプレビュー
+        dummyStep.voicingMode = 4; // Rootless A でプレビュー
         dummyStep.shift = audioProcessor.sequenceData[currentStep].shift;
 
         for (int v = 0; v < 4; ++v) dummyStep.voices[v].isActive = true;
@@ -86,9 +86,16 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::applySuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        // ★修正: 現在のUI解像度（ステップ幅）の分だけ内部ステップを右へ進める
         int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
         int nextStep = currentStep + internalStepMultiplier;
+
+        // =====================================================================
+        // ★修正1: 現在のコードが「次に挿入する場所」に被る場合、長さを切り詰める
+        // =====================================================================
+        float maxAllowedGate = static_cast<float>(internalStepMultiplier) * 0.25f;
+        if (audioProcessor.sequenceData[currentStep].gateLength > maxAllowedGate) {
+            audioProcessor.sequenceData[currentStep].gateLength = maxAllowedGate;
+        }
 
         if (nextStep < TotalSteps) {
             auto& sData = audioProcessor.sequenceData[nextStep];
@@ -98,9 +105,7 @@ namespace ChordMatrix {
                 sData.chordDegree = sug.targetDegree;
                 sData.scaleType = sug.targetScale;
 
-                sData.voicingMode = 4; // デフォルトは Rootless A
-
-                // ★修正: 挿入時の長さをUIのStep設定(1.0=1/4など)に完全に準拠させる
+                sData.voicingMode = 4;
                 sData.gateLength = currentPpqPerStep;
 
                 for (int v = 0; v < 7; ++v) {
@@ -110,12 +115,18 @@ namespace ChordMatrix {
                 }
                 for (int v = 0; v < 4; ++v) sData.voices[v].isActive = true;
 
-                // 挿入直後に1度最適化をかけ、直前の和音とボイスリーディングを滑らかに繋ぐ
-                VoicingEngine::optimizeStep(audioProcessor.sequenceData, nextStep, 0.25f, 0);
+                // =====================================================================
+                // ★修正2: 新しく挿入したコードの長さに被っている未来のゴミデータを消去
+                // =====================================================================
+                for (int i = 1; i < internalStepMultiplier; ++i) {
+                    if (nextStep + i < TotalSteps && !audioProcessor.sequenceData[nextStep + i].isLocked) {
+                        audioProcessor.sequenceData[nextStep + i] = {};
+                    }
+                }
 
+                VoicingEngine::optimizeStep(audioProcessor.sequenceData, nextStep, 0.25f, 0);
                 audioProcessor.previewSequenceData[nextStep] = sData;
 
-                // 適用完了後、UIのフォーカスを新しいステップに移動させる
                 if (onSuggestionApplied) onSuggestionApplied(nextStep);
             }
         }
