@@ -22,6 +22,8 @@ namespace ChordMatrix {
         addAndMakeVisible(btnApply);
         btnApply.setColour(juce::TextButton::buttonColourId, juce::Colours::hotpink);
         btnApply.onClick = [this] {
+            audioProcessor.isProgressionPreviewPlaying.store(false);
+
             applyPresetToProcessor();
             if (onApplyPreset) onApplyPreset();
             };
@@ -29,13 +31,32 @@ namespace ChordMatrix {
         addAndMakeVisible(btnCancel);
         btnCancel.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
         btnCancel.onClick = [this] {
+            audioProcessor.isProgressionPreviewPlaying.store(false);
+
             if (onCancel) onCancel();
             };
 
+        addAndMakeVisible(btnPreview);
+        btnPreview.setColour(juce::TextButton::buttonColourId, juce::Colours::cyan.withAlpha(0.6f));
+        btnPreview.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        btnPreview.onClick = [this] {
+            previewPreset();
+            };
+
         categoryList.selectRow(0);
+
+        // ★タイマー開始(30Hz)でPreviewボタンの点灯状態を監視
+        startTimerHz(30);
     }
 
     ProgressionBrowserComponent::~ProgressionBrowserComponent() {}
+
+    // ★タイマーでPreviewボタンの色を自動更新（再生が終わったら自動消灯）
+    void ProgressionBrowserComponent::timerCallback() {
+        bool isPlaying = audioProcessor.isProgressionPreviewPlaying.load();
+        btnPreview.setColour(juce::TextButton::buttonColourId,
+            isPlaying ? juce::Colours::hotpink : juce::Colours::cyan.withAlpha(0.6f));
+    }
 
     void ProgressionBrowserComponent::loadPresets() {
         categories.clear();
@@ -99,12 +120,51 @@ namespace ChordMatrix {
         selectedPreset = row;
         repaint();
         if (e.getNumberOfClicks() == 2) {
+            audioProcessor.isProgressionPreviewPlaying.store(false);
             applyPresetToProcessor();
             if (onApplyPreset) onApplyPreset();
         }
     }
 
     void ProgressionBrowserComponent::applyPresetToProcessor() {
+        applyPresetToArray(audioProcessor.sequenceData);
+        audioProcessor.previewSequenceData = audioProcessor.sequenceData;
+    }
+
+    void ProgressionBrowserComponent::previewPreset() {
+        if (selectedCategory < 0 || selectedCategory >= (int)categories.size()) return;
+        if (selectedPreset < 0 || selectedPreset >= (int)categories[selectedCategory].presets.size()) return;
+
+        // ★すでに再生中なら強制停止（トグル動作）
+        if (audioProcessor.isProgressionPreviewPlaying.load()) {
+            audioProcessor.isProgressionPreviewPlaying.store(false);
+            audioProcessor.previewEndTimePPQ.store(-1.0);
+            return;
+        }
+
+        const auto& preset = categories[selectedCategory].presets[selectedPreset];
+
+        // プレビュー用配列に書き込み
+        audioProcessor.previewSequenceData = audioProcessor.sequenceData;
+        applyPresetToArray(audioProcessor.previewSequenceData);
+
+        int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
+        int tsNum = (int)*audioProcessor.apvts.getRawParameterValue("timeSigNum");
+        int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
+        int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
+        float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
+        int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
+
+        // ★開始位置と終了位置をPPQで計算してエンジンに渡す
+        double startPPQ = static_cast<double>(editBar) * static_cast<double>(internalStepsPerBar) * 0.25;
+        double lengthPPQ = static_cast<double>(preset.numBars) * static_cast<double>(internalStepsPerBar) * 0.25;
+
+        audioProcessor.internalPPQ = startPPQ;
+        audioProcessor.previewEndTimePPQ.store(startPPQ + lengthPPQ);
+        audioProcessor.isProgressionPreviewPlaying.store(true);
+    }
+
+    void ProgressionBrowserComponent::applyPresetToArray(std::array<StepData, TotalSteps>& destArray) {
         if (selectedCategory < 0 || selectedCategory >= (int)categories.size()) return;
         if (selectedPreset < 0 || selectedPreset >= (int)categories[selectedCategory].presets.size()) return;
 
@@ -115,12 +175,9 @@ namespace ChordMatrix {
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
 
-        // ★修正: 1小節あたりの内部ステップ数（0.25 PPQ = 1/16音符ベース）を正確に計算
         float beatsPerBar = static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen));
         int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
 
-        // ★修正: 1拍（Beat）あたりの内部ステップ数を正確に計算
-        // 例: 4/4拍子なら1拍(四分音符)=1.0 PPQ なので 4ステップ
         float ppqPerBeat = 4.0f / static_cast<float>(tsDen);
         int internalStepsPerBeat = juce::roundToInt(ppqPerBeat / 0.25f);
 
@@ -131,13 +188,11 @@ namespace ChordMatrix {
             int barStartStep = targetBar * internalStepsPerBar;
             for (int s = 0; s < internalStepsPerBar; ++s) {
                 int step = barStartStep + s;
-                auto& sData = audioProcessor.sequenceData[step];
+                auto& sData = destArray[step];
 
                 bool wasLocked = sData.isLocked;
                 sData = {};
                 sData.isLocked = wasLocked;
-
-                audioProcessor.previewSequenceData[step] = sData;
             }
         }
 
@@ -145,16 +200,14 @@ namespace ChordMatrix {
         int baseScale = audioProcessor.sequenceData[editBar * internalStepsPerBar].scaleType;
 
         for (const auto& chord : preset.chords) {
-            // ★修正: chord.startBeat は「1拍単位」のオフセットなので、そのまま拍あたりのステップ数を掛ける
             int totalBeatsOffset = chord.startBeat;
             int targetBar = editBar + (totalBeatsOffset / tsNum);
             if (targetBar >= 16) continue;
 
-            // ★修正: 小節の先頭インデックス ＋ 余りの拍数 × 1拍のステップ数
             int targetStep = (targetBar * internalStepsPerBar) + ((totalBeatsOffset % tsNum) * internalStepsPerBeat);
 
             if (targetStep < ChordMatrix::TotalSteps) {
-                auto& sData = audioProcessor.sequenceData[targetStep];
+                auto& sData = destArray[targetStep];
 
                 if (sData.isLocked) continue;
 
@@ -162,8 +215,6 @@ namespace ChordMatrix {
                 sData.scaleType = baseScale;
                 sData.chordDegree = chord.chordDegree;
                 sData.voicingMode = chord.voicingMode;
-
-                // ★修正: 長さ(lengthBeats)をPPQに変換して保存
                 sData.gateLength = static_cast<float>(chord.lengthBeats) * ppqPerBeat;
 
                 bool isAuto = VoicingEngine::isAutoPattern(chord.voicingMode);
@@ -183,8 +234,6 @@ namespace ChordMatrix {
                 sData.voices[3].isActive = (chord.acc7th != -128);
                 sData.voices[3].accidental = (chord.acc7th == -128) ? 0 : chord.acc7th;
                 sData.voices[3].octaveShift = (chord.acc7th == -128 && isAuto) ? -128 : 0;
-
-                audioProcessor.previewSequenceData[targetStep] = sData;
             }
         }
     }
@@ -192,8 +241,11 @@ namespace ChordMatrix {
     void ProgressionBrowserComponent::resized() {
         auto area = getLocalBounds();
         auto bottomArea = area.removeFromBottom(80);
+
         btnApply.setBounds(bottomArea.removeFromRight(150).reduced(15));
         btnCancel.setBounds(bottomArea.removeFromRight(100).reduced(15, 20));
+        btnPreview.setBounds(bottomArea.removeFromRight(100).reduced(15, 20));
+
         categoryList.setBounds(area.removeFromLeft(getWidth() / 3).reduced(10));
         presetList.setBounds(area.reduced(10));
     }

@@ -56,9 +56,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
-  
 
-    // 変更後（↓こちらに差し替え）
     params.push_back(std::make_unique<juce::AudioParameterChoice>("stepSize", "Step Size", juce::StringArray{ "2/1", "1/1", "1/2", "1/4", "1/8", "1/16" }, 3));
     return { params.begin(), params.end() };
 }
@@ -70,7 +68,6 @@ void ChordMatrixAudioProcessor::prepareToPlay(double sampleRate, int)
     currentGlobalStep = -1;
     currentSampleRate = static_cast<float>(sampleRate);
 
-    // ★ADSR修正：Attackを遅く、Sustain/Releaseを加えて豊かな響きに
     juce::ADSR::Parameters adsrParams{ 0.05f, 0.8f, 0.4f, 0.4f };
     for (auto& env : adsrs) {
         env.setSampleRate(sampleRate);
@@ -94,11 +91,15 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float hostBPM = 120.0f;
     double ppq = internalPPQ;
 
+    // ★プレビュー再生中はホスト(DAW)の再生状態を無視して強制的に内部再生を進める
+    bool forcePreview = isPlayingModulationPreview.load() || isProgressionPreviewPlaying.load();
+
     if (playHead != nullptr && playHead->getPosition().hasValue())
     {
         const auto& pos = *playHead->getPosition();
         if (auto b = pos.getBpm()) hostBPM = (float)*b;
-        if (isSyncEnabled)
+
+        if (isSyncEnabled && !forcePreview)
         {
             if (auto p = pos.getPpqPosition()) ppq = *p;
             isPlaying = pos.getIsPlaying();
@@ -107,23 +108,31 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 
     float manualBPM = *apvts.getRawParameterValue("tempo");
-    if (!isSyncEnabled)
+
+    if (!isSyncEnabled || forcePreview)
     {
-        if (isInternalPlaying)
+        if (isInternalPlaying || forcePreview)
         {
-            double samplesPerBeat = (60.0 / (double)manualBPM) * getSampleRate();
+            float activeBPM = isSyncEnabled ? hostBPM : manualBPM;
+            double samplesPerBeat = (60.0 / (double)activeBPM) * getSampleRate();
             internalPPQ += (double)buffer.getNumSamples() / samplesPerBeat;
             ppq = internalPPQ;
+            currentBPM = activeBPM;
+
+            // ★プレビューの自動停止(ワンショット)ロジック
+            if (isProgressionPreviewPlaying.load() && previewEndTimePPQ.load() > 0.0) {
+                if (internalPPQ >= previewEndTimePPQ.load()) {
+                    isProgressionPreviewPlaying.store(false);
+                    previewEndTimePPQ.store(-1.0); // 停止
+                }
+            }
         }
-        isPlaying = isInternalPlaying;
-        currentBPM = manualBPM;
+        isPlaying = isInternalPlaying || forcePreview;
     }
 
     int tsNum = (int)*apvts.getRawParameterValue("timeSigNum");
     int tsDenIdx = (int)*apvts.getRawParameterValue("timeSigDen");
     int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
-    int stepSizeIdx = (int)*apvts.getRawParameterValue("stepSize");
-    float ppqPerStep = (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
 
     if (triggerPreview.exchange(false))
     {
@@ -145,7 +154,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
     }
 
-    // ★修正: 内部解像度を1/16音符(0.25 PPQ)に完全固定
     float beatsPerBar = (float)tsNum * (4.0f / (float)tsDen);
     int internalStepsPerBar = juce::roundToInt(beatsPerBar / 0.25f);
     if (internalStepsPerBar < 1) internalStepsPerBar = 1;
@@ -185,13 +193,20 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     if (isPlaying)
     {
-        // ★修正: プレイヘッドも常に固定解像度(0.25 PPQ)で進行する
         int stepIdx = static_cast<int>(ppq / 0.25);
-        int stepInLoop = stepIdx % totalStepsInLoop;
+
+        // ★プレビュー中はループ設定(LoopBars)を無視して強制的に読み進める
+        int stepToPlay = stepIdx;
+        if (!forcePreview) {
+            stepToPlay = stepIdx % totalStepsInLoop;
+        }
+        else {
+            stepToPlay = stepIdx % ChordMatrix::TotalSteps;
+        }
 
         if (stepIdx != currentGlobalStep)
         {
-            const auto& sData = isPlayingModulationPreview.load() ? previewSequenceData[stepInLoop] : sequenceData[stepInLoop];
+            const auto& sData = forcePreview ? previewSequenceData[stepToPlay] : sequenceData[stepToPlay];
 
             std::array<int, 7> vps;
             int count = ChordMatrix::VoicingEngine::getVoicedPitches(sData, vps);
@@ -210,8 +225,6 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
                 float chordDurationSec = static_cast<float>(sData.gateLength) * (60.0f / currentBPM);
                 float activeDecay = juce::jmax(0.05f, chordDurationSec * 0.95f);
-
-                // ★ADSR修正：Decayを少し長めに取り、SustainとReleaseを適用
                 juce::ADSR::Parameters mainParams{ 0.02f, activeDecay, 0.4f, 0.4f };
 
                 for (int i = 0; i < count; ++i)
@@ -267,11 +280,9 @@ void ChordMatrixAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 void ChordMatrixAudioProcessor::getStateInformation(juce::MemoryBlock& d)
 {
     auto state = apvts.copyState();
-
     state.setProperty("seq", juce::MemoryBlock(sequenceData.data(), sizeof(sequenceData)), nullptr);
     state.setProperty("memSlots", juce::MemoryBlock(memorySlots.data(), sizeof(memorySlots)), nullptr);
     state.setProperty("memUsed", juce::MemoryBlock(isSlotUsed.data(), sizeof(isSlotUsed)), nullptr);
-
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, d);
 }
@@ -290,7 +301,6 @@ void ChordMatrixAudioProcessor::setStateInformation(const void* d, int s)
             memcpy(sequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(sequenceData)));
             memcpy(previewSequenceData.data(), mb->getData(), juce::jmin((size_t)mb->getSize(), sizeof(previewSequenceData)));
         }
-
         if (tree.hasProperty("memSlots"))
         {
             auto mb = tree.getProperty("memSlots").getBinaryData();

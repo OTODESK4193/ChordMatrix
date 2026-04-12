@@ -42,6 +42,10 @@ public:
 
     std::atomic<bool> isPlayingModulationPreview{ false };
 
+    // ★追加: Progression Browser用の独立したプレビューフラグと終了位置
+    std::atomic<bool> isProgressionPreviewPlaying{ false };
+    std::atomic<double> previewEndTimePPQ{ -1.0 };
+
     bool isInternalPlaying = false;
     bool isSyncEnabled = true;
     bool isPlaying = false;

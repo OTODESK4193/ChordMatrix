@@ -1,18 +1,18 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
+#include <array>
 #include "../PluginProcessor.h"
 #include "../Engine/ProgressionEngine.h"
 
 namespace ChordMatrix {
 
-    // UIでリスト表示するためのカテゴリ・ヘルパー
     struct ProgressionCategory {
         juce::String name;
         std::vector<ProgressionPreset> presets;
     };
 
-    class ProgressionBrowserComponent : public juce::Component, public juce::ListBoxModel
+    class ProgressionBrowserComponent : public juce::Component, public juce::ListBoxModel, public juce::Timer
     {
     public:
         ProgressionBrowserComponent(ChordMatrixAudioProcessor& p);
@@ -20,6 +20,7 @@ namespace ChordMatrix {
 
         void paint(juce::Graphics& g) override;
         void resized() override;
+        void timerCallback() override;
 
         int getNumRows() override;
         void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override;
@@ -36,6 +37,7 @@ namespace ChordMatrix {
 
         juce::TextButton btnApply{ "APPLY TO BAR" };
         juce::TextButton btnCancel{ "CANCEL" };
+        juce::TextButton btnPreview{ "PREVIEW" };
 
         std::vector<ProgressionCategory> categories;
         int selectedCategory = 0;
@@ -43,6 +45,8 @@ namespace ChordMatrix {
 
         void loadPresets();
         void applyPresetToProcessor();
+        void applyPresetToArray(std::array<StepData, TotalSteps>& destArray);
+        void previewPreset();
 
         class CategoryListModel : public juce::ListBoxModel {
             ProgressionBrowserComponent& owner;
