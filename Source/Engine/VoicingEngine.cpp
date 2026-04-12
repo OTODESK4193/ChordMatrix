@@ -400,11 +400,10 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
+    // =========================================================================
+    // ★新AI最適化エンジン: 1対1のボイスマッピングと重心計算による跳躍撲滅版
+    // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
-        // =========================================================================
-        // ★新規追加: ターゲットのステップ自体が「空（休符）」の場合は最適化をスキップ
-        // （BARやALLスコープで実行した際、空ステップの内部データを破壊させないための保護）
-        // =========================================================================
         bool targetHasActive = false;
         for (int v = 0; v < 7; ++v) {
             if (seq[targetStep].voices[v].isActive) { targetHasActive = true; break; }
@@ -464,6 +463,11 @@ namespace ChordMatrix
         bool isGuideToneResolution = (seq[prevActiveStep].chordDegree == 1 && baseStep.chordDegree == 4) ||
             (seq[prevActiveStep].chordDegree == 4 && baseStep.chordDegree == 0);
 
+        // 前の和音の重心（Center of Gravity）を計算
+        float prevCog = 0.0f;
+        for (int i = 0; i < prevCount; ++i) prevCog += static_cast<float>(prevPitches[i]);
+        prevCog /= static_cast<float>(prevCount);
+
         for (auto& c : candidates) {
             StepData testStep = baseStep;
             testStep.voicingMode = c.voicingMode;
@@ -477,19 +481,35 @@ namespace ChordMatrix
             float l1Cost = 0.0f;
             int maxJump = 0;
 
-            for (int i = 0; i < testCount; ++i) {
-                int minDist = 9999;
-                for (int j = 0; j < prevCount; ++j) {
-                    int dist = std::abs(testPitches[i] - prevPitches[j]);
-                    if (dist < minDist) minDist = dist;
-                }
-                l1Cost += static_cast<float>(minDist);
-                if (minDist > maxJump) maxJump = minDist;
+            // =================================================================
+            // ★修正: 1対1の正確なボイス・バイジェクション（対応関係）で距離を測る
+            // 下からi番目の音は、前の和音の下からi番目の音と距離を比較する
+            // =================================================================
+            int compareCount = std::min(testCount, prevCount);
+            for (int i = 0; i < compareCount; ++i) {
+                int dist = std::abs(testPitches[i] - prevPitches[i]);
+                l1Cost += static_cast<float>(dist);
+                if (dist > maxJump) maxJump = dist;
 
-                if (minDist == 0) c.cost -= 10.0f;
+                if (dist == 0) c.cost -= 10.0f; // 共通音ボーナス
             }
+
             c.cost += l1Cost * 2.0f;
-            if (maxJump > 6) c.cost += static_cast<float>(maxJump) * 5.0f;
+
+            // 大跳躍には非常に厳しいペナルティ（これでオクターブジャンプが消滅します）
+            if (maxJump > 5) c.cost += static_cast<float>(maxJump) * 8.0f;
+            if (maxJump > 10) c.cost += 500.0f; // 1オクターブ近い跳躍はほぼ禁止
+
+            // 声部数が変わる（音が消える、増える）場合のペナルティ
+            if (testCount != prevCount) {
+                c.cost += static_cast<float>(std::abs(testCount - prevCount)) * 10.0f;
+            }
+
+            // ★追加: 和音の重心（平均ピッチ）の移動ペナルティ
+            float testCog = 0.0f;
+            for (int i = 0; i < testCount; ++i) testCog += static_cast<float>(testPitches[i]);
+            testCog /= static_cast<float>(testCount);
+            c.cost += std::abs(testCog - prevCog) * 5.0f;
 
             if (isGuideToneResolution && prev7thPC != -1) {
                 for (int i = 0; i < prevCount; ++i) {
@@ -523,7 +543,7 @@ namespace ChordMatrix
 
             int highestPitch = testPitches[testCount - 1];
             if (highestPitch > 79) c.cost += static_cast<float>(highestPitch - 79) * 5.0f;
-            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 5.0f;
+            if (highestPitch < 60) c.cost += static_cast<float>(60 - highestPitch) * 2.0f;
 
             int lowestPitch = testPitches[0];
             if (lowestPitch < 40) c.cost += static_cast<float>(40 - lowestPitch) * 3.0f;

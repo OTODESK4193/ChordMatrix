@@ -158,7 +158,10 @@ namespace ChordMatrix {
 
     float MatrixGridComponent::getPpqPerStep() const {
         int stepSizeIdx = (int)*audioProcessor.apvts.getRawParameterValue("stepSize");
-        return (stepSizeIdx == 0) ? 1.0f : (stepSizeIdx == 1) ? 0.5f : 0.25f;
+        // インデックス順: 0="2/1", 1="1/1", 2="1/2", 3="1/4", 4="1/8", 5="1/16"
+        const float ppqs[] = { 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f };
+        if (stepSizeIdx >= 0 && stepSizeIdx < 6) return ppqs[stepSizeIdx];
+        return 1.0f; // デフォルトは1/4
     }
 
     int MatrixGridComponent::getInternalStep(int bar, int uiStep) const {

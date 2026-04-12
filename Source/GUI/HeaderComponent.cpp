@@ -32,7 +32,7 @@ namespace ChordMatrix {
 
         setupCombo(stepSizeMenu, stepSizeLabel);
         stepSizeMenu.onChange = [this] {
-            audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 2.0f);
+            audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((stepSizeMenu.getSelectedId() - 1) / 5.0f);
             if (onRepaintRequest) onRepaintRequest();
             };
 
@@ -77,26 +77,41 @@ namespace ChordMatrix {
         timeSigNumMenu.setSelectedId(currentSelection, juce::dontSendNotification);
         audioProcessor.apvts.getParameter("timeSigNum")->setValueNotifyingHost((currentSelection - 1) / 14.0f);
     }
-
     void HeaderComponent::updateStepSizeMenu() {
         int denIdx = timeSigDenMenu.getSelectedId();
-        int currentId = (int)*audioProcessor.apvts.getRawParameterValue("stepSize") + 1;
+
+        // APVTSから現在の設定（0〜5）を取得し、メニューID（1〜6）に変換
+        int currentId = juce::roundToInt(audioProcessor.apvts.getRawParameterValue("stepSize")->load()) + 1;
 
         stepSizeMenu.clear(juce::dontSendNotification);
-        if (denIdx == 1) {
-            stepSizeMenu.addItem("1/4", 1); stepSizeMenu.addItem("1/8", 2); stepSizeMenu.addItem("1/16", 3);
+
+        if (denIdx == 1) { // 4分音符系 (4/4など)
+            stepSizeMenu.addItem("2/1", 1);
+            stepSizeMenu.addItem("1/1", 2);
+            stepSizeMenu.addItem("1/2", 3);
+            stepSizeMenu.addItem("1/4", 4);
+            stepSizeMenu.addItem("1/8", 5);
+            stepSizeMenu.addItem("1/16", 6);
         }
-        else if (denIdx == 2) {
-            stepSizeMenu.addItem("1/8", 2); stepSizeMenu.addItem("1/16", 3);
-            if (currentId == 1) currentId = 2;
+        else if (denIdx == 2) { // 8分音符系 (6/8など)
+            stepSizeMenu.addItem("1/2", 3);
+            stepSizeMenu.addItem("1/4", 4);
+            stepSizeMenu.addItem("1/8", 5);
+            stepSizeMenu.addItem("1/16", 6);
+            if (currentId < 3) currentId = 3; // 範囲外なら 1/2 に丸める
         }
-        else if (denIdx == 3) {
-            stepSizeMenu.addItem("1/16", 3);
-            currentId = 3;
+        else if (denIdx == 3) { // 16分音符系
+            stepSizeMenu.addItem("1/4", 4);
+            stepSizeMenu.addItem("1/8", 5);
+            stepSizeMenu.addItem("1/16", 6);
+            if (currentId < 4) currentId = 4; // 範囲外なら 1/4 に丸める
         }
 
         stepSizeMenu.setSelectedId(currentId, juce::dontSendNotification);
-        audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost((currentId - 1) / 2.0f);
+
+        // ★重要: ここでも分母を 5.0f に。これをしないと 1/4(ID=4) 以上が反応しません。
+        float normalizedValue = static_cast<float>(currentId - 1) / 5.0f;
+        audioProcessor.apvts.getParameter("stepSize")->setValueNotifyingHost(normalizedValue);
     }
 
     void HeaderComponent::resized() {

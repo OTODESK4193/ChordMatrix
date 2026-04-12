@@ -56,8 +56,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordMatrixAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{ "tempo", 1 }, "BPM", 20.0f, 300.0f, 120.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ "timeSigNum", 1 }, "TimeSigNum", 1, 15, 4));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "timeSigDen", 1 }, "TimeSigDen", juce::StringArray{ "4", "8", "16" }, 0));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{ "stepSize", 1 }, "StepSize", juce::StringArray{ "1/4", "1/8", "1/16" }, 2));
+  
 
+    // 変更後（↓こちらに差し替え）
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("stepSize", "Step Size", juce::StringArray{ "2/1", "1/1", "1/2", "1/4", "1/8", "1/16" }, 3));
     return { params.begin(), params.end() };
 }
 
