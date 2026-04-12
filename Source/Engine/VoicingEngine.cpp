@@ -392,8 +392,8 @@ namespace ChordMatrix
     }
 
     // =========================================================================
-    // ★ 究極AI最適化エンジン: Viterbi + テンション動的オルタード（b9/b13自動選択）
-    // =========================================================================
+        // ★ 究極AI最適化エンジン: Viterbi + 5つの音楽的バリエーション (altIndex対応)
+        // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
         std::vector<int> activeSteps;
         for (int s = 0; s < TotalSteps; ++s) {
@@ -417,9 +417,14 @@ namespace ChordMatrix
             int bestPrevState;
         };
 
-        // 探索空間の解放（全ボイシングを許可）
         std::vector<int> allowedModes = { 0, 1, 4, 5, 8, 12 };
         std::vector<std::vector<State>> dp(activeSteps.size());
+
+        // バリエーション(altIndex)に応じたコスト重みの設定
+        int safeAlt = altIndex % 5;
+        float topNoteWeight = (safeAlt == 1) ? 15.0f : 3.0f; // Alt 1: メロディ重視
+        float bassNoteWeight = (safeAlt == 2) ? 20.0f : 0.0f; // Alt 2: ベース重視
+        float centerGravity = (safeAlt == 3) ? 10.0f : 0.0f; // Alt 3: 中央密集重視
 
         for (size_t t = 0; t < activeSteps.size(); ++t) {
             int s = activeSteps[t];
@@ -431,16 +436,14 @@ namespace ChordMatrix
                 continue;
             }
 
-            // ★テンション動的付与のための「並行世界（Variation）」生成
             std::vector<StepData> variations;
-            variations.push_back(seq[s]); // ナチュラルの基本形
+            variations.push_back(seq[s]);
 
-            // ドミナントコード（V7等）の場合は、b9やb13のオルタード状態も並行探索させる
             if (seq[s].chordDegree == 4 || (seq[s].voices[1].isActive && seq[s].voices[3].accidental == -1)) {
                 if (seq[s].voicingMode == 4 || seq[s].voicingMode == 5) {
-                    StepData alt1 = seq[s]; alt1.voices[1].accidental = -1; // 13th/9th alteration
+                    StepData alt1 = seq[s]; alt1.voices[1].accidental = -1;
                     variations.push_back(alt1);
-                    StepData alt2 = seq[s]; alt2.voices[3].accidental = -1; // 9th/13th alteration
+                    StepData alt2 = seq[s]; alt2.voices[3].accidental = -1;
                     variations.push_back(alt2);
                 }
             }
@@ -467,7 +470,6 @@ namespace ChordMatrix
             }
         }
 
-        // フォワードパス
         for (size_t t = 1; t < activeSteps.size(); ++t) {
             for (size_t v = 0; v < dp[t].size(); ++v) {
                 float minCost = 9999999.0f;
@@ -488,19 +490,24 @@ namespace ChordMatrix
                     if (maxJump > 5) transitionCost += static_cast<float>(maxJump) * 10.0f;
                     if (maxJump > 10) transitionCost += 500.0f;
 
+                    // ★バリエーション重みの適用
                     int topDist = std::abs(dp[t][v].pitches[dp[t][v].count - 1] - dp[t - 1][u].pitches[dp[t - 1][u].count - 1]);
-                    transitionCost += static_cast<float>(topDist) * 3.0f;
+                    transitionCost += static_cast<float>(topDist) * topNoteWeight;
 
                     int bassDist = std::abs(dp[t][v].pitches[0] - dp[t - 1][u].pitches[0]);
-                    if (bassDist == 0 && dp[t][v].pitches[0] != dp[t - 1][u].pitches[0]) {
-                        transitionCost += 20.0f;
-                    }
+                    transitionCost += static_cast<float>(bassDist) * bassNoteWeight;
 
                     float stateCost = 0.0f;
                     int topPitch = dp[t][v].pitches[dp[t][v].count - 1];
                     int bottomPitch = dp[t][v].pitches[0];
                     if (topPitch > 84) stateCost += static_cast<float>(topPitch - 84) * 5.0f;
                     if (bottomPitch < 40) stateCost += static_cast<float>(40 - bottomPitch) * 5.0f;
+
+                    // Alt 3 用の中央密集ペナルティ
+                    if (safeAlt == 3) {
+                        float distFromCenter = std::abs(((float)topPitch + (float)bottomPitch) / 2.0f - 60.0f);
+                        stateCost += distFromCenter * centerGravity;
+                    }
 
                     float totalCost = dp[t - 1][u].cost + transitionCost + stateCost;
 
@@ -514,23 +521,23 @@ namespace ChordMatrix
             }
         }
 
-        // バックトラックと適用
-        int bestFinalState = 0;
-        float minFinalCost = 9999999.0f;
+        // バックトラック（Alt 4 の場合は、あえて2番目に良い着地点を選ぶ）
+        std::vector<std::pair<float, int>> finalStates;
         for (size_t v = 0; v < dp.back().size(); ++v) {
-            if (dp.back()[v].cost < minFinalCost) {
-                minFinalCost = dp.back()[v].cost;
-                bestFinalState = static_cast<int>(v);
-            }
+            finalStates.push_back({ dp.back()[v].cost, static_cast<int>(v) });
+        }
+        std::sort(finalStates.begin(), finalStates.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+        int currState = finalStates[0].second;
+        if (safeAlt == 4 && finalStates.size() > 1) {
+            currState = finalStates[1].second; // Alt 4: アナザー・エンディング
         }
 
-        int currState = bestFinalState;
         for (int t = static_cast<int>(activeSteps.size()) - 1; t >= 0; --t) {
             int s = activeSteps[t];
             if (!seq[s].isLocked) {
                 seq[s].voicingMode = dp[t][currState].voicingMode;
                 seq[s].inversion = dp[t][currState].inversion;
-                // Viterbiが選んだ究極のテンション変異を書き戻す
                 if (dp[t][currState].mutatedVoiceIdx != -1) {
                     seq[s].voices[dp[t][currState].mutatedVoiceIdx].accidental = dp[t][currState].mutatedAcc;
                 }
