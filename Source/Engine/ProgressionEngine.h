@@ -25,11 +25,14 @@ namespace ChordMatrix
         juce::String previewText;
     };
 
-    // ★新規追加: AIコードサジェスション機能のためのデータ構造
+    // =========================================================
+    // ★バグ修正: .cpp側のデータ送信順序と完璧に一致するように
+    // relativeKeyOffset を shift に置き換えました
+    // =========================================================
     struct ChordSuggestion {
         int targetDegree;       // 提案する次コードのディグリー (0:I, 1:II ...)
         int targetScale;        // 推奨スケール (0:Major, 1:Minor ...)
-        int relativeKeyOffset;  // 現在のキーからの相対シフト (-12 to +12)
+        int shift = 0;          // 臨時記号・借用のシフト量 (-12 to +12)
         float probability;      // 遷移確率の重み付け (0.0 to 1.0)
         juce::String reasoning; // 提案の理論的根拠 (UI表示用)
     };
@@ -63,13 +66,9 @@ namespace ChordMatrix
             int targetBar, int targetKey, int targetScale, int method,
             int stepsPerBar, int stepsPerBeat, float ppqPerStep);
 
-        // ------------------------------------------------------------
-        // 変更後 (ProgressionEngine.h)
-        // ------------------------------------------------------------
         static const std::vector<ProgressionPreset>& getProgressionDictionary();
         static juce::StringArray getModulationNames();
 
-        // ★修正: シーケンス全体を渡し、前後の文脈を解析して推論するシグネチャに変更
         static std::vector<ChordSuggestion> suggestNextChords(const std::array<StepData, TotalSteps>& seq, int currentStep, float ppqPerStep);
     };
 }

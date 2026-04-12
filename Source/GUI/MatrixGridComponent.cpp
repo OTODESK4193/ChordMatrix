@@ -158,10 +158,9 @@ namespace ChordMatrix {
 
     float MatrixGridComponent::getPpqPerStep() const {
         int stepSizeIdx = (int)*audioProcessor.apvts.getRawParameterValue("stepSize");
-        // インデックス順: 0="2/1", 1="1/1", 2="1/2", 3="1/4", 4="1/8", 5="1/16"
         const float ppqs[] = { 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f };
         if (stepSizeIdx >= 0 && stepSizeIdx < 6) return ppqs[stepSizeIdx];
-        return 1.0f; // デフォルトは1/4
+        return 1.0f;
     }
 
     int MatrixGridComponent::getInternalStep(int bar, int uiStep) const {
@@ -631,10 +630,9 @@ namespace ChordMatrix {
                 if (e.mods.isLeftButtonDown()) {
                     audioProcessor.apvts.getParameter("editBar")->setValueNotifyingHost(static_cast<float>(i) / 15.0f);
 
-                    // ★追加: Barボタンを押した瞬間に、そのBarの先頭へフォーカス(selectedStep)を移動させる
                     selectedStep = i * internalStepsPerBar;
-                    suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), internalStepsPerBar);
                     if (onStepSelected) onStepSelected(selectedStep);
+                    suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), internalStepsPerBar);
 
                     if (onRepaintRequest) onRepaintRequest();
                 }
@@ -680,6 +678,14 @@ namespace ChordMatrix {
             noteRightX = leftMargin + ((endS - barStartS) / static_cast<float>(internalStepMultiplier)) * stepW;
         }
 
+        // =========================================================================
+        // ★クリック判定の強化: Inspector更新後にサジェストを更新する
+        // =========================================================================
+        auto updateFocusAndSuggest = [&](int stepIndex) {
+            if (onStepSelected) onStepSelected(selectedStep = stepIndex);
+            suggestionPanel.updateSuggestions(stepIndex, getPpqPerStep(), internalStepsPerBar);
+            };
+
         if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
             if (!effStep.isLocked) {
                 if (!VoicingEngine::isAutoPattern(effStep.voicingMode) && effStep.voicingMode != 3) {
@@ -699,29 +705,27 @@ namespace ChordMatrix {
                     }
                 }
             }
-            suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
-            if (onStepSelected) onStepSelected(selectedStep = effS);
+            updateFocusAndSuggest(effS);
             return;
         }
 
         if (e.y >= 155.0f + 7.0f * cellHeight && e.y < 155.0f + 7.0f * cellHeight + 30.0f) {
             if (e.mods.isLeftButtonDown()) {
                 audioProcessor.sequenceData[effS] = {};
-                suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
-                if (onStepSelected) onStepSelected(selectedStep = effS);
+                updateFocusAndSuggest(effS);
                 if (onRepaintRequest) onRepaintRequest();
             }
             return;
         }
 
+        // ★コードネーム部分（ヘッダー）のクリック
         if (e.y >= 155.0f - headerHeight - 35.0f && e.y < 155.0f - 35.0f) {
             std::array<int, 7> vps = { 0 };
             int count = VoicingEngine::getVoicedPitches(effStep, vps);
             for (int i = 0; i < 7; ++i) audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
             audioProcessor.triggerPreview.store(true);
 
-            suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
-            if (onStepSelected) onStepSelected(selectedStep = effS);
+            updateFocusAndSuggest(effS);
             return;
         }
 
@@ -754,8 +758,7 @@ namespace ChordMatrix {
                     }
                     if (!anyActive) effStep = {};
 
-                    suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
-                    if (onStepSelected) onStepSelected(selectedStep = effS);
+                    updateFocusAndSuggest(effS);
                     return;
                 }
 
@@ -776,8 +779,7 @@ namespace ChordMatrix {
                         for (int i = 2; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
                         audioProcessor.triggerPreview.store(true);
 
-                        suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
-                        if (onStepSelected) onStepSelected(selectedStep = effS);
+                        updateFocusAndSuggest(effS);
                         return;
                     }
                 }
@@ -829,8 +831,7 @@ namespace ChordMatrix {
                         for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
                         audioProcessor.triggerPreview.store(true);
 
-                        suggestionPanel.updateSuggestions(internalS, getPpqPerStep(), internalStepsPerBar);
-                        if (onStepSelected) onStepSelected(selectedStep = internalS);
+                        updateFocusAndSuggest(internalS);
                         return;
                     }
                 }
@@ -856,8 +857,7 @@ namespace ChordMatrix {
                     for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
                     audioProcessor.triggerPreview.store(true);
 
-                    suggestionPanel.updateSuggestions(internalS, getPpqPerStep(), internalStepsPerBar);
-                    if (onStepSelected) onStepSelected(selectedStep = internalS);
+                    updateFocusAndSuggest(internalS);
                     return;
                 }
             }
@@ -1014,8 +1014,8 @@ namespace ChordMatrix {
                         dragStep = targetStep;
                         dragStartX += static_cast<float>(deltaUiSteps) * stepW;
 
-                        suggestionPanel.updateSuggestions(targetStep, uiPpqPerStep, internalStepsPerBar);
                         if (onStepSelected) onStepSelected(selectedStep = targetStep);
+                        suggestionPanel.updateSuggestions(targetStep, uiPpqPerStep, internalStepsPerBar);
                     }
                 }
             }
@@ -1062,7 +1062,6 @@ namespace ChordMatrix {
                         voice.octaveShift = juce::jlimit<int8_t>(-2, 2, voice.octaveShift + (wheel.deltaY > 0 ? 1 : -1));
                     }
 
-                    selectedStep = effS;
                     int previewPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
                     audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, previewPitch));
 
@@ -1080,8 +1079,8 @@ namespace ChordMatrix {
                     int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
                     int internalStepsPerBar = juce::roundToInt((static_cast<float>(tsNum) * (4.0f / static_cast<float>(tsDen))) / 0.25f);
 
-                    suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
                     if (onStepSelected) onStepSelected(selectedStep = effS);
+                    suggestionPanel.updateSuggestions(effS, getPpqPerStep(), internalStepsPerBar);
                     repaint();
                 }
             }

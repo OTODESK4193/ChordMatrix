@@ -22,14 +22,20 @@ namespace ChordMatrix {
             return;
         }
 
-        currentSuggestions = ProgressionEngine::suggestNextChords(audioProcessor.sequenceData, currentStep, ppqPerStep);
+        // ★スマート挿入ロジック：現在地が空ならそのまま、埋まっていれば次へ
+        bool isCurrentEmpty = true;
+        for (int v = 0; v < 7; ++v) {
+            if (audioProcessor.sequenceData[currentStep].voices[v].isActive) {
+                isCurrentEmpty = false; break;
+            }
+        }
+        int insertionStep = currentStep;
+        if (!isCurrentEmpty) {
+            int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
+            insertionStep = currentStep + internalStepMultiplier;
+        }
 
-        // 生成されたスコアに従ってソート (10枠はProgressionEngine側で保証済み)
-        std::sort(currentSuggestions.begin(), currentSuggestions.end(),
-            [](const ChordSuggestion& a, const ChordSuggestion& b) {
-                return a.probability > b.probability;
-            });
-
+        currentSuggestions = ProgressionEngine::suggestNextChords(audioProcessor.sequenceData, insertionStep, ppqPerStep);
         buildButtons();
     }
 
@@ -40,7 +46,7 @@ namespace ChordMatrix {
             const auto& sug = currentSuggestions[i];
 
             juce::String degName = MusicTheory::getDegreeNames()[sug.targetDegree];
-            // bII 等の独自名称がある場合はスケールと度数から表示を上書き
+            // bII や bVI 等の独自名称がある場合はスケールと度数から表示を上書き
             if (sug.reasoning.contains("bII")) degName = "bII";
             else if (sug.reasoning.contains("bIII")) degName = "bIII";
             else if (sug.reasoning.contains("bVI")) degName = "bVI";
@@ -50,12 +56,12 @@ namespace ChordMatrix {
 
             auto* btn = new SuggestionButton(labelText);
 
-            juce::Colour btnColor = juce::Colours::cyan; // 王道
-            if (sug.reasoning.contains("Neo-Riemannian") || sug.reasoning.contains("Mediant") || sug.reasoning.contains("Neapolitan") || sug.reasoning.contains("Subtonic") || sug.reasoning.contains("Submediant") || sug.reasoning.contains("SD Minor") || sug.reasoning.contains("Dom Minor")) {
-                btnColor = juce::Colours::hotpink; // 独創・借用
+            juce::Colour btnColor = juce::Colours::cyan;
+            if (sug.reasoning.contains("Neapolitan") || sug.reasoning.contains("Mediant") || sug.reasoning.contains("Subtonic") || sug.reasoning.contains("Submediant") || sug.reasoning.contains("Neo-Riemannian")) {
+                btnColor = juce::Colours::hotpink;
             }
-            else if (sug.reasoning.contains("Target") || sug.reasoning.contains("Approach")) {
-                btnColor = juce::Colours::yellow; // ターゲット逆算
+            else if (sug.reasoning.contains("Target") || sug.reasoning.contains("Proactive")) {
+                btnColor = juce::Colours::yellow;
             }
 
             btn->setColour(juce::TextButton::buttonColourId, btnColor.withAlpha(0.2f));
@@ -64,7 +70,7 @@ namespace ChordMatrix {
             btn->onLeftClick = [this, sug] { applySuggestion(sug); };
             btn->onRightClick = [this, sug] { previewSuggestion(sug); };
 
-            btn->setTooltip("Left Click: Apply | Right Click: Preview Chord");
+            btn->setTooltip("L-Click: Insert | R-Click: Preview Chord");
 
             addAndMakeVisible(btn);
             suggestionButtons.add(btn);
@@ -80,8 +86,8 @@ namespace ChordMatrix {
         dummyStep.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
         dummyStep.scaleType = sug.targetScale;
         dummyStep.chordDegree = sug.targetDegree;
-        dummyStep.voicingMode = 4; // Rootless A で最も無難なプレビュー
-        dummyStep.shift = audioProcessor.sequenceData[currentStep].shift;
+        dummyStep.voicingMode = 4; // Rootless A でプレビュー
+        dummyStep.shift = sug.shift; // ★バグ修正: 臨時記号(shift)を反映
 
         for (int v = 0; v < 4; ++v) dummyStep.voices[v].isActive = true;
 
@@ -97,25 +103,18 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::applySuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        // =====================================================================
-        // ★スマート挿入ロジック：現在のマスが「空」か「埋まっているか」をチェック
-        // =====================================================================
         bool isCurrentEmpty = true;
         for (int v = 0; v < 7; ++v) {
             if (audioProcessor.sequenceData[currentStep].voices[v].isActive) {
-                isCurrentEmpty = false;
-                break;
+                isCurrentEmpty = false; break;
             }
         }
 
         int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
-        int targetStep = currentStep; // デフォルトは「現在選択中のマス」
+        int targetStep = currentStep;
 
         if (!isCurrentEmpty) {
-            // 埋まっていれば「次のマス」へ進む
             targetStep = currentStep + internalStepMultiplier;
-
-            // ついでに元のコードが長すぎる場合は切り詰める
             float maxAllowedGate = static_cast<float>(internalStepMultiplier) * 0.25f;
             if (audioProcessor.sequenceData[currentStep].gateLength > maxAllowedGate) {
                 audioProcessor.sequenceData[currentStep].gateLength = maxAllowedGate;
@@ -126,12 +125,12 @@ namespace ChordMatrix {
             auto& sData = audioProcessor.sequenceData[targetStep];
 
             if (!sData.isLocked) {
-                // ベースのキーは前のコードから引き継ぐ
                 sData.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
                 sData.chordDegree = sug.targetDegree;
                 sData.scaleType = sug.targetScale;
+                sData.shift = sug.shift; // ★バグ修正: 臨時記号(shift)を反映
 
-                sData.voicingMode = 4; // デフォルトは Rootless A
+                sData.voicingMode = 4;
                 sData.gateLength = currentPpqPerStep;
 
                 for (int v = 0; v < 7; ++v) {
@@ -141,19 +140,16 @@ namespace ChordMatrix {
                 }
                 for (int v = 0; v < 4; ++v) sData.voices[v].isActive = true;
 
-                // 新しく挿入したコードの長さに被っている未来のゴミデータを消去
                 for (int i = 1; i < internalStepMultiplier; ++i) {
                     if (targetStep + i < TotalSteps && !audioProcessor.sequenceData[targetStep + i].isLocked) {
                         audioProcessor.sequenceData[targetStep + i] = {};
                     }
                 }
 
-                // ボイスリーディング最適化
                 VoicingEngine::optimizeStep(audioProcessor.sequenceData, targetStep, 0.25f, 0);
 
                 audioProcessor.previewSequenceData[targetStep] = sData;
 
-                // 適用完了後、UIのフォーカスを新しいステップに移動させる
                 if (onSuggestionApplied) onSuggestionApplied(targetStep);
             }
         }
@@ -178,14 +174,12 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::resized() {
         if (suggestionButtons.isEmpty()) return;
 
-        // =====================================================================
-        // ★4行表示への最適化：ボタンの縦幅と余白を詰めて最大10〜12個を画面内に収める
-        // =====================================================================
+        // ★UI最適化：ボタンの縦幅と余白を詰めて最大10〜12個を画面内に収める
         int startX = 10;
         int startY = 30;
-        int btnHeight = 22; // 以前の25pxから少しスリム化
+        int btnHeight = 22; // 25pxから少しスリム化
         int spacingX = 8;
-        int spacingY = 6;   // 縦の余白も少し詰める
+        int spacingY = 6;
         int maxRows = 4;
 
         int currentX = startX;
@@ -193,14 +187,13 @@ namespace ChordMatrix {
         int rowCount = 0;
 
         for (auto* btn : suggestionButtons) {
-            int btnWidth = 90 + btn->getButtonText().length() * 4;
+            int btnWidth = 105 + btn->getButtonText().length() * 4;
 
-            // 右端にぶつかったら改行
             if (currentX + btnWidth > getWidth() - 10) {
                 currentX = startX;
                 currentY += btnHeight + spacingY;
                 rowCount++;
-                if (rowCount >= maxRows) break; // 4行を超えたら描画ストップ
+                if (rowCount >= maxRows) break;
             }
 
             btn->setBounds(currentX, currentY, btnWidth, btnHeight);

@@ -5,13 +5,13 @@
 #include <cmath>
 #include <map>
 #include <string>
-#include <tuple>
+#include <vector>
 
 namespace ChordMatrix
 {
     namespace AI_Models {
 
-        // --- 1. Pop Bigram (McGill) ---
+        // --- 1. Pop Bigram (McGill Billboard) ---
         static float getPopBigram(int fromDeg, int toDeg) {
             static const float matrix[7][7] = {
                 { 0.050f, 0.089f, 0.030f, 0.347f, 0.227f, 0.107f, 0.010f }, // I
@@ -26,59 +26,46 @@ namespace ChordMatrix
             return 0.01f;
         }
 
-        // --- 2. Trigram Bonus ---
+        // --- 2. Trigram Bonus (多層N-gram) ---
         static float getTrigramBonus(int deg_n2, int deg_n1, int deg_n) {
-            float bonus = 1.0f; // 乗算ボーナス
-
-            // J-POP: IV-V-iii (433)
+            float bonus = 1.0f;
             if (deg_n2 == 3 && deg_n1 == 4 && deg_n == 2) bonus = 1.5f;
-            // J-POP: V-iii-vi (536)
             else if (deg_n2 == 4 && deg_n1 == 2 && deg_n == 5) bonus = 1.5f;
-            // Jazz: ii-V-I (251)
-            else if (deg_n2 == 1 && deg_n1 == 4 && deg_n == 0) bonus = 1.2f;
-            // Pop: I-V-vi (156)
+            else if (deg_n2 == 1 && deg_n1 == 4 && deg_n == 0) bonus = 1.4f;
             else if (deg_n2 == 0 && deg_n1 == 4 && deg_n == 5) bonus = 1.4f;
-            // Pop: V-vi-IV (564)
             else if (deg_n2 == 4 && deg_n1 == 5 && deg_n == 3) bonus = 1.4f;
-
             return bonus;
         }
 
         // --- 3. Metrical Position Weight ---
         static float getMetricalWeight(int beatIdx, int deg) {
-            // 強拍(1,3拍目=0,2), 弱拍(2,4拍目=1,3)
             bool isStrong = (beatIdx == 0 || beatIdx == 2);
-            int func = (deg == 0 || deg == 5) ? 0 : // Tonic
-                (deg == 4 || deg == 6) ? 2 : // Dominant
-                1; // Subdominant / Other
+            int func = (deg == 0 || deg == 5) ? 0 :
+                (deg == 4 || deg == 6) ? 2 : 1;
 
             if (func == 0) return isStrong ? 1.2f : 0.8f;
             if (func == 2) return isStrong ? 0.8f : 1.2f;
             return 1.0f;
         }
 
-        // --- 4. Tonnetz Distance (Common Tones & Circle of Fifths) ---
+        // --- 4. Tonnetz Distance ---
         static float getTonnetzDistance(const StepData& src, const StepData& dst) {
             std::array<int, 7> pA = { 0 }, pB = { 0 };
             int cA = VoicingEngine::getVoicedPitches(src, pA);
             int cB = VoicingEngine::getVoicedPitches(dst, pB);
 
-            int common = 0;
+            int commonTones = 0;
             bool usedB[7] = { false };
             for (int i = 0; i < cA; ++i) {
                 for (int j = 0; j < cB; ++j) {
                     if (!usedB[j] && (pA[i] % 12) == (pB[j] % 12)) {
-                        common++;
-                        usedB[j] = true;
-                        break;
+                        commonTones++; usedB[j] = true; break;
                     }
                 }
             }
-            common = std::min(3, common);
+            commonTones = std::min(3, commonTones);
 
-            auto getRootPC = [](const StepData& s) {
-                return (((MusicTheory::getBasePitch(s, 0) + s.shift) % 12) + 12) % 12;
-                };
+            auto getRootPC = [](const StepData& s) { return (((MusicTheory::getBasePitch(s, 0) + s.shift) % 12) + 12) % 12; };
             int rA = getRootPC(src);
             int rB = getRootPC(dst);
 
@@ -86,32 +73,32 @@ namespace ChordMatrix
             int fd = std::abs(FIFTH_POS[rA] - FIFTH_POS[rB]);
             int circleSteps = std::min(fd, 12 - fd);
 
-            // D = α*(3 - common) + β*circleDist
-            return 1.0f * (3.0f - static_cast<float>(common)) + 0.5f * static_cast<float>(circleSteps);
+            return 1.0f * (3.0f - static_cast<float>(commonTones)) + 0.5f * static_cast<float>(circleSteps);
         }
 
         // --- 5. Modal Interchange Emotions (Pink Category) ---
-        struct Emotion { int deg; int scale; float bright; float surprise; std::string name; };
+        // ★修正: shift（臨時記号）の値を明記しました
+        struct Emotion { int deg; int scale; int shift; float bright; float surprise; std::string name; };
         static const std::vector<Emotion> BORROWED_EMOTIONS = {
-            { 1, 0, 0.3f, 0.9f, "bII (Neapolitan)" },
-            { 2, 0, 0.6f, 0.5f, "bIII (Mediant)" },
-            { 5, 0, 0.4f, 0.7f, "bVI (Submediant)" },
-            { 6, 0, 0.8f, 0.6f, "bVII (Subtonic)" }
+            { 1, 0, -1, 0.3f, 0.9f, "bII (Neapolitan)" },
+            { 2, 0, -1, 0.6f, 0.5f, "bIII (Mediant)" },
+            { 5, 0, -1, 0.4f, 0.7f, "bVI (Submediant)" },
+            { 6, 0, -1, 0.8f, 0.6f, "bVII (Subtonic)" }
         };
 
+        // ★修正: shift 値を保持するように拡張
         struct Cand {
-            int deg; int scale; bool isBorrowed;
+            int deg; int scale; int shift; bool isBorrowed;
             float cyanScore = 0; float yellowScore = 0; float pinkScore = 0;
             float tonnetzDist = 0; std::string tag;
         };
     }
 
-    std::vector<ChordSuggestion> ProgressionEngine::suggestNextChords(const std::array<StepData, TotalSteps>& seq, int currentStep, float ppqPerStep) {
+    std::vector<ChordSuggestion> ProgressionEngine::suggestNextChords(const std::array<StepData, TotalSteps>& seq, int insertionStep, float ppqPerStep) {
         std::vector<ChordSuggestion> suggestions;
 
-        // 1. 文脈の取得
         int prevIdx = -1, prev2Idx = -1, nextIdx = -1;
-        for (int s = currentStep; s >= 0; --s) {
+        for (int s = insertionStep - 1; s >= 0; --s) {
             bool act = false; for (int v = 0; v < 7; ++v) if (seq[s].voices[v].isActive) act = true;
             if (act) { prevIdx = s; break; }
         }
@@ -121,7 +108,7 @@ namespace ChordMatrix
                 if (act) { prev2Idx = s; break; }
             }
         }
-        for (int s = currentStep + 1; s < TotalSteps; ++s) {
+        for (int s = insertionStep + 1; s < TotalSteps; ++s) {
             bool act = false; for (int v = 0; v < 7; ++v) if (seq[s].voices[v].isActive) act = true;
             if (act) { nextIdx = s; break; }
         }
@@ -129,69 +116,82 @@ namespace ChordMatrix
         const StepData& prev = (prevIdx >= 0) ? seq[prevIdx] : StepData{};
         int deg_n1 = (prevIdx >= 0) ? prev.chordDegree : -1;
         int deg_n2 = (prev2Idx >= 0) ? seq[prev2Idx].chordDegree : -1;
+        int curKey = (prevIdx >= 0) ? prev.keyRoot : 0;
         int curScale = (prevIdx >= 0) ? prev.scaleType : 0;
 
-        // 拍位置の計算
-        int beatIdx = static_cast<int>(std::fmod(currentStep * 0.25f, 4.0f));
+        int beatIdx = static_cast<int>(insertionStep * 0.25f) % 4;
 
         std::vector<AI_Models::Cand> candidates;
 
-        auto createDummyStep = [&](int d, int sc) {
-            StepData st = prev; st.chordDegree = d; st.scaleType = sc; st.voicingMode = 4;
-            for (int i = 0; i < 4; ++i) st.voices[i].isActive = true;
+        // ★修正: shift 値を受け取って正確な和音を展開する
+        auto createDummyStep = [&](int d, int sc, int sh) {
+            StepData st = prev; // 直前のボイシング設定などを引き継ぐ
+            st.keyRoot = curKey; st.chordDegree = d; st.scaleType = sc; st.shift = sh;
+            // 仮想的に4声で鳴らす
+            for (int i = 0; i < 7; ++i) st.voices[i].isActive = (i < 4);
             return st;
             };
 
         // --- A. ダイアトニック候補 (Cyan / Yellow) ---
         for (int deg = 0; deg < 7; ++deg) {
-            AI_Models::Cand c; c.deg = deg; c.scale = curScale; c.isBorrowed = false;
+            AI_Models::Cand c; c.deg = deg; c.scale = curScale; c.shift = 0; c.isBorrowed = false;
 
             float score = (deg_n1 >= 0) ? AI_Models::getPopBigram(deg_n1, deg) : 1.0f;
-            score *= AI_Models::getTrigramBonus(deg_n2, deg_n1, deg);
+            float trigram = AI_Models::getTrigramBonus(deg_n2, deg_n1, deg);
+            score *= trigram;
             score *= AI_Models::getMetricalWeight(beatIdx, deg);
 
-            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(deg, curScale)) : 0.0f;
-
-            // 距離ペナルティ (Dが大きいほどスコア低下)
+            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(deg, curScale, 0)) : 0.0f;
             c.cyanScore = score * std::exp(-c.tonnetzDist * 0.2f);
-            c.tag = "Diatonic (Markov+Trigram)";
+
+            if (trigram > 1.4f) c.tag = "J-POP Royal / Pivot";
+            else if (trigram > 1.1f) c.tag = "Jazz/Pop Schema";
+            else c.tag = "Diatonic Flow";
 
             if (nextIdx >= 0) {
                 const auto& target = seq[nextIdx];
                 if (deg == (target.chordDegree + 3) % 7) {
-                    c.yellowScore = score * 1.5f; c.tag = "Target: Sec. Dominant";
+                    c.yellowScore = score * 1.8f; c.tag = "Target: Sec. Dominant";
                 }
                 else if (std::abs(deg - target.chordDegree) == 1) {
-                    c.yellowScore = score * 1.3f; c.tag = "Target: Chromatic Approach";
+                    c.yellowScore = score * 1.5f; c.tag = "Target: Chromatic Appr.";
                 }
+            }
+            else {
+                if (deg == 4) { c.yellowScore = score * 1.2f; c.tag = "Proactive: Dom -> Tonic"; }
+                if (deg == 6) { c.yellowScore = score * 1.1f; c.tag = "Proactive: Dim -> Tonic"; }
             }
             candidates.push_back(c);
         }
 
-        // --- B. モーダル・インターチェンジ候補 (Pink) ---
+        // --- B. モーダル・インターチェンジ候補 (Pink / Yellow) ---
         for (const auto& mi : AI_Models::BORROWED_EMOTIONS) {
-            AI_Models::Cand c; c.deg = mi.deg; c.scale = mi.scale; c.isBorrowed = true;
+            // ★修正: shift = mi.shift を追加
+            AI_Models::Cand c; c.deg = mi.deg; c.scale = mi.scale; c.shift = mi.shift; c.isBorrowed = true;
 
-            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(mi.deg, mi.scale)) : 0.0f;
+            // ★修正: shift を考慮してTonnetz距離を計算する
+            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(mi.deg, mi.scale, mi.shift)) : 0.0f;
 
-            // SurpriseとBrightのバランスでエモーションスコアを計算
-            float emotionScore = (mi.surprise * 0.6f) + (mi.bright * 0.4f);
-            c.pinkScore = emotionScore * std::exp(-c.tonnetzDist * 0.1f);
+            float emotionScore = (mi.surprise * 0.7f) + (mi.bright * 0.3f);
+            c.pinkScore = emotionScore * std::exp(-c.tonnetzDist * 0.15f);
             c.tag = mi.name;
 
             if (nextIdx >= 0) {
                 const auto& target = seq[nextIdx];
                 if (std::abs(mi.deg - target.chordDegree) == 1) {
-                    c.yellowScore = emotionScore * 1.2f; c.tag = "Target: Tritone / Chromatic";
+                    c.yellowScore = emotionScore * 1.5f; c.tag = "Target: Chromatic / Modal";
                 }
+            }
+            else {
+                if (mi.deg == 1) { c.yellowScore = emotionScore * 1.2f; c.tag = "Proactive: SubV7 -> Tonic"; }
             }
             candidates.push_back(c);
         }
 
         // ============================================================
-        // 10スロット・ポートフォリオ配分 (Cyan:4, Yellow:3, Pink:3)
+        // 10枠 ポートフォリオ・アロケーター
         // ============================================================
-        auto sortAndFilter = [](std::vector<AI_Models::Cand>& cands, int mode, int maxSlots) {
+        auto sortAndFilter = [](std::vector<AI_Models::Cand>& cands, int mode, int maxSlots, std::vector<int>& pickedIds) {
             std::vector<AI_Models::Cand> result;
 
             std::sort(cands.begin(), cands.end(), [mode](const AI_Models::Cand& a, const AI_Models::Cand& b) {
@@ -203,39 +203,43 @@ namespace ChordMatrix
             for (const auto& c : cands) {
                 if (result.size() >= maxSlots) break;
                 float score = (mode == 0) ? c.cyanScore : (mode == 1) ? c.yellowScore : c.pinkScore;
-                if (score <= 0.01f) continue;
+                if (score <= 0.001f) continue;
 
-                // 多様性フィルタ: 同じルートがカテゴリ内に連続しないかチェック
-                bool similar = false;
-                for (const auto& r : result) {
-                    if (r.deg == c.deg) { similar = true; break; }
+                // ★バグ修正: 単なる度数(deg)ではなく、度数+シフト量で一意なIDを作成し、
+                // ピンク枠（bVI）とシアン枠（vi）が衝突して消滅するのを防ぎます
+                int uniqueId = c.deg * 100 + c.shift;
+
+                if (std::find(pickedIds.begin(), pickedIds.end(), uniqueId) == pickedIds.end()) {
+                    result.push_back(c);
+                    pickedIds.push_back(uniqueId);
                 }
-                if (!similar) result.push_back(c);
             }
             return result;
             };
 
-        auto cyanList = sortAndFilter(candidates, 0, 4);
-        auto yellowList = sortAndFilter(candidates, 1, nextIdx >= 0 ? 3 : 0);
-        auto pinkList = sortAndFilter(candidates, 2, 3);
+        std::vector<int> globalPickedIds;
+        auto cyanList = sortAndFilter(candidates, 0, 4, globalPickedIds);
+        auto yellowList = sortAndFilter(candidates, 1, nextIdx >= 0 ? 3 : 0, globalPickedIds);
+        auto pinkList = sortAndFilter(candidates, 2, 3, globalPickedIds);
 
-        // 不足分を補填して最大10枠へ
+        // 不足分をCyanから補填
         int total = cyanList.size() + yellowList.size() + pinkList.size();
         if (total < 10) {
-            auto extraCyan = sortAndFilter(candidates, 0, 4 + (10 - total));
+            std::vector<int> dummy; // 補填分は重複を許容
+            auto extraCyan = sortAndFilter(candidates, 0, 4 + (10 - total), dummy);
             cyanList = extraCyan;
         }
 
         auto addSuggestions = [&](const std::vector<AI_Models::Cand>& list) {
             for (const auto& c : list) {
-                // すでに追加されているかチェック
                 bool exists = false;
                 for (const auto& s : suggestions) {
-                    if (s.targetDegree == c.deg && s.targetScale == c.scale) { exists = true; break; }
+                    if (s.targetDegree == c.deg && s.targetScale == c.scale && s.shift == c.shift) { exists = true; break; }
                 }
                 if (!exists) {
                     float finalScore = std::max({ c.cyanScore, c.yellowScore, c.pinkScore });
-                    suggestions.push_back({ c.deg, c.scale, 0, finalScore, c.tag });
+                    // ★修正: c.shift を確実にサジェスト結果に渡す
+                    suggestions.push_back({ c.deg, c.scale, c.shift, finalScore, c.tag });
                 }
             }
             };
@@ -244,169 +248,69 @@ namespace ChordMatrix
         addSuggestions(yellowList);
         addSuggestions(pinkList);
 
-        // UI表示のために最大10枠で切り捨て
         if (suggestions.size() > 10) suggestions.resize(10);
 
         return suggestions;
     }
 
-    juce::StringArray ProgressionEngine::getModulationNames() {
-        return {
-            "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i",
-            "Backdoor (IVm7-bVII7)", "Passing Diminished", "Secondary Dominant",
-            "Double ii-V", "Coltrane Matrix", "Extended Dominant", "Chromatic Up",
-            "Chromatic Down", "Deceptive (V7->vi)", "Constant Structure",
-            "Pedal Point", "Neo-Riemannian P", "Neo-Riemannian L", "Neo-Riemannian R"
-        };
-    }
+    // --- 以降の getModulationNames, applyModulation, getProgressionDictionary はそのまま維持 ---
+    juce::StringArray ProgressionEngine::getModulationNames() { return { "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i", "Backdoor (IVm7-bVII7)", "Passing Diminished", "Secondary Dominant", "Double ii-V", "Coltrane Matrix", "Extended Dominant", "Chromatic Up", "Chromatic Down", "Deceptive (V7->vi)", "Constant Structure", "Pedal Point", "Neo-Riemannian P", "Neo-Riemannian L", "Neo-Riemannian R" }; }
 
-    void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source,
-        std::array<StepData, TotalSteps>& dest,
-        int targetBar, int targetKey, int targetScale, int method,
-        int stepsPerBar, int stepsPerBeat, float ppqPerStep)
-    {
+    void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source, std::array<StepData, TotalSteps>& dest, int targetBar, int targetKey, int targetScale, int method, int stepsPerBar, int stepsPerBeat, float ppqPerStep) {
         dest = source;
         if (targetBar <= 0 || targetBar >= 16) return;
-
         float chordGate = static_cast<float>(stepsPerBeat) * ppqPerStep;
         int targetStepStart = static_cast<int>(static_cast<int64_t>(targetBar) * static_cast<int64_t>(stepsPerBar));
-
-        dest[targetStepStart].keyRoot = targetKey;
-        dest[targetStepStart].scaleType = targetScale;
-        dest[targetStepStart].chordDegree = 0;
-        dest[targetStepStart].voicingMode = 0;
-
-        for (int v = 0; v < 7; ++v) {
-            dest[targetStepStart].voices[v].isActive = (v < 4);
-        }
+        dest[targetStepStart].keyRoot = targetKey; dest[targetStepStart].scaleType = targetScale; dest[targetStepStart].chordDegree = 0; dest[targetStepStart].voicingMode = 0;
+        for (int v = 0; v < 7; ++v) { dest[targetStepStart].voices[v].isActive = (v < 4); }
         dest[targetStepStart].gateLength = chordGate * 2.0f;
-
         int prevBar = targetBar - 1;
         int prevStepStart = static_cast<int>(static_cast<int64_t>(prevBar) * static_cast<int64_t>(stepsPerBar));
         int b2 = static_cast<int>(static_cast<int64_t>(stepsPerBar) - 2LL * static_cast<int64_t>(stepsPerBeat));
         int b1 = static_cast<int>(static_cast<int64_t>(stepsPerBar) - 1LL * static_cast<int64_t>(stepsPerBeat));
-
         float modStartPPQ = static_cast<float>(b2) * ppqPerStep;
         for (int i = 0; i < b2; ++i) {
             float currentStepPPQ = static_cast<float>(i) * ppqPerStep;
             float maxGate = modStartPPQ - currentStepPPQ;
-            if (dest[prevStepStart + i].gateLength > maxGate) {
-                dest[prevStepStart + i].gateLength = maxGate;
-            }
+            if (dest[prevStepStart + i].gateLength > maxGate) dest[prevStepStart + i].gateLength = maxGate;
         }
-
         for (int i = b2; i < stepsPerBar; ++i) {
-            for (int v = 0; v < 7; ++v) {
-                dest[prevStepStart + i].voices[v].isActive = false;
-            }
-            dest[prevStepStart + i].voicingMode = 0;
-            dest[prevStepStart + i].shift = 0;
+            for (int v = 0; v < 7; ++v) dest[prevStepStart + i].voices[v].isActive = false;
+            dest[prevStepStart + i].voicingMode = 0; dest[prevStepStart + i].shift = 0;
         }
-
         int s_ii = prevStepStart + b2;
         int s_V = prevStepStart + b1;
-
         if (method >= 15 && method <= 17) {
             bool targetIsMinor = (targetScale == 1 || targetScale == 2 || targetScale == 3 || targetScale == 4);
-            dest[s_V].voicingMode = 0;
-            dest[s_V].gateLength = chordGate * 2.0f;
-
-            if (method == NeoRiemannianP) {
-                dest[s_V].keyRoot = targetKey;
-                dest[s_V].scaleType = targetIsMinor ? 0 : 1;
-                dest[s_V].chordDegree = 0;
-            }
-            else if (method == NeoRiemannianL) {
-                dest[s_V].keyRoot = targetIsMinor ? (targetKey + 8) % 12 : (targetKey + 4) % 12;
-                dest[s_V].scaleType = targetIsMinor ? 0 : 1;
-                dest[s_V].chordDegree = 0;
-            }
-            else if (method == NeoRiemannianR) {
-                dest[s_V].keyRoot = targetIsMinor ? (targetKey + 3) % 12 : (targetKey + 9) % 12;
-                dest[s_V].scaleType = targetIsMinor ? 0 : 1;
-                dest[s_V].chordDegree = 0;
-            }
-
-            for (int v = 0; v < 4; ++v) {
-                dest[s_V].voices[v].isActive = true;
-            }
+            dest[s_V].voicingMode = 0; dest[s_V].gateLength = chordGate * 2.0f;
+            if (method == NeoRiemannianP) { dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = targetIsMinor ? 0 : 1; dest[s_V].chordDegree = 0; }
+            else if (method == NeoRiemannianL) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 8) % 12 : (targetKey + 4) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 1; dest[s_V].chordDegree = 0; }
+            else if (method == NeoRiemannianR) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 3) % 12 : (targetKey + 9) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 1; dest[s_V].chordDegree = 0; }
+            for (int v = 0; v < 4; ++v) dest[s_V].voices[v].isActive = true;
             return;
         }
-
-        if (method == TwoFiveOne && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
-        }
-        else if (method == DeceptiveCadence && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
-            dest[targetStepStart].chordDegree = 5;
-        }
-        else if (method == TritoneSub && b2 >= 0) {
-            dest[s_ii].keyRoot = (targetKey + 1) % 12; dest[s_ii].scaleType = 7; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4;
-        }
-        else if (method == MinorTwoFive && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 1; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 0;
-            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 1; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 0;
-            dest[s_V].voices[1].accidental = 1;
-        }
-        else if (method == Backdoor && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 1; dest[s_ii].chordDegree = 3; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 1; dest[s_V].chordDegree = 6; dest[s_V].voicingMode = 4;
-        }
-        else if (method == ExtendedDominant && b2 >= 0) {
-            dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 4; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = (targetKey + 7) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
-        }
-        else if (method == PassingDiminished && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 0;
-            dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 0;
-            dest[s_V].voices[1].accidental = -1; dest[s_V].voices[2].accidental = -1; dest[s_V].voices[3].accidental = -2;
-        }
-        else if (method == ChromaticApproachUp && b2 >= 0) {
-            dest[s_ii].keyRoot = (targetKey + 10) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = targetScale; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4;
-        }
-        else if (method == ChromaticApproachDown && b2 >= 0) {
-            dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = (targetKey + 1) % 12; dest[s_V].scaleType = targetScale; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4;
-        }
-        else if (method == ConstantStructure && b2 >= 0) {
-            dest[s_ii].keyRoot = (targetKey + 10) % 12; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4;
-        }
-        else if (method == PedalPointApproach && b2 >= 0) {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 3; dest[s_ii].voicingMode = 4;
-            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
-        }
-        else {
-            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 4; dest[s_ii].voicingMode = 4;
-            dest[s_ii].gateLength = chordGate * 2.0f;
-        }
-
+        if (method == TwoFiveOne && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4; }
+        else if (method == DeceptiveCadence && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4; dest[targetStepStart].chordDegree = 5; }
+        else if (method == TritoneSub && b2 >= 0) { dest[s_ii].keyRoot = (targetKey + 1) % 12; dest[s_ii].scaleType = 7; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4; }
+        else if (method == MinorTwoFive && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 1; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 0; dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 1; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 0; dest[s_V].voices[1].accidental = 1; }
+        else if (method == Backdoor && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 1; dest[s_ii].chordDegree = 3; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 1; dest[s_V].chordDegree = 6; dest[s_V].voicingMode = 4; }
+        else if (method == ExtendedDominant && b2 >= 0) { dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 4; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = (targetKey + 7) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4; }
+        else if (method == PassingDiminished && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 1; dest[s_ii].voicingMode = 0; dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 0; dest[s_V].voices[1].accidental = -1; dest[s_V].voices[2].accidental = -1; dest[s_V].voices[3].accidental = -2; }
+        else if (method == ChromaticApproachUp && b2 >= 0) { dest[s_ii].keyRoot = (targetKey + 10) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = targetScale; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4; }
+        else if (method == ChromaticApproachDown && b2 >= 0) { dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = (targetKey + 1) % 12; dest[s_V].scaleType = targetScale; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4; }
+        else if (method == ConstantStructure && b2 >= 0) { dest[s_ii].keyRoot = (targetKey + 10) % 12; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = (targetKey + 11) % 12; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 0; dest[s_V].voicingMode = 4; }
+        else if (method == PedalPointApproach && b2 >= 0) { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 3; dest[s_ii].voicingMode = 4; dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4; }
+        else { dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = 0; dest[s_ii].chordDegree = 4; dest[s_ii].voicingMode = 4; dest[s_ii].gateLength = chordGate * 2.0f; }
         if (b2 >= 0) {
-            for (int v = 0; v < 4; ++v) {
-                dest[s_ii].voices[v].isActive = true;
-                if (method != DirectDominant) {
-                    dest[s_V].voices[v].isActive = true;
-                }
-            }
-            if (method == DirectDominant) {
-                dest[s_ii].gateLength = chordGate * 2.0f;
-            }
-            else {
-                dest[s_ii].gateLength = chordGate;
-                dest[s_V].gateLength = chordGate;
-            }
+            for (int v = 0; v < 4; ++v) { dest[s_ii].voices[v].isActive = true; if (method != DirectDominant) { dest[s_V].voices[v].isActive = true; } }
+            if (method == DirectDominant) { dest[s_ii].gateLength = chordGate * 2.0f; }
+            else { dest[s_ii].gateLength = chordGate; dest[s_V].gateLength = chordGate; }
         }
     }
 
     const std::vector<ProgressionPreset>& ProgressionEngine::getProgressionDictionary() {
         static std::vector<ProgressionPreset> dict;
         if (dict.empty()) {
-            // =========================================================
-            // 1. US: Trap & Neo-Soul
-            // =========================================================
             dict.push_back({ "1. US: Trap & Neo-Soul", "Modern Trap Soul", 4, {{0,8,0,9,0,0,0,0}, {8,4,3,9,0,0,0,0}, {12,4,6,9,0,0,0,0}}, "i - iv - VII (Shell)" });
             dict.push_back({ "1. US: Trap & Neo-Soul", "Neo R&B Loop", 4, {{0,4,1,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,0,4,0,0,0,0}, {12,4,5,4,0,0,0,0}}, "ii - V - I - vi (Rootless)" });
             dict.push_back({ "1. US: Trap & Neo-Soul", "Cinematic Trap", 4, {{0,4,0,13,0,0,0,0}, {4,4,5,13,-1,0,0,0}, {8,4,2,13,-1,0,0,0}, {12,4,6,13,-1,0,0,0}}, "i - bVI - bIII - bVII (Cluster)" });
@@ -418,9 +322,6 @@ namespace ChordMatrix
             dict.push_back({ "1. US: Trap & Neo-Soul", "Trap Diminished Approach", 4, {{0,4,0,13,0,0,0,0}, {4,4,0,13,1,0,0,0}, {8,4,1,13,0,0,0,0}, {12,4,4,13,0,0,0,0}}, "I - #Idim7 - ii - V (Cluster)" });
             dict.push_back({ "1. US: Trap & Neo-Soul", "Minor 9 Vamp", 4, {{0,4,0,4,0,0,0,0}, {4,4,1,4,0,0,0,0}, {8,4,4,4,0,0,0,0}, {12,4,3,4,0,0,0,0}}, "i - ii - v - IV (Rootless)" });
 
-            // =========================================================
-            // 2. UK: Garage & Indie Pop
-            // =========================================================
             dict.push_back({ "2. UK: Garage & Indie Pop", "2-Step Garage Stab", 4, {{0,4,0,8,0,0,0,0}, {4,4,3,8,0,0,0,0}, {8,4,6,8,0,0,0,0}, {12,4,2,8,0,0,0,0}}, "i - iv - bVII - bIII (Quartal)" });
             dict.push_back({ "2. UK: Garage & Indie Pop", "Piano House Anthem", 4, {{0,4,0,9,0,0,0,0}, {4,4,4,9,0,0,0,0}, {8,4,5,9,0,0,0,0}, {12,4,3,9,0,0,0,0}}, "I - V - vi - IV (Shell)" });
             dict.push_back({ "2. UK: Garage & Indie Pop", "Hypnotic Techno", 4, {{0,4,0,13,0,0,0,0}, {4,4,6,13,-1,-1,-1,-1}, {8,4,5,13,-1,-1,-1,-1}, {12,4,6,13,-1,-1,-1,-1}}, "i - bVII - bVI - bVII (Cluster)" });
@@ -432,9 +333,6 @@ namespace ChordMatrix
             dict.push_back({ "2. UK: Garage & Indie Pop", "Moody Deep House", 4, {{0,4,0,4,0,0,0,0}, {4,4,6,4,-1,-1,-1,-1}, {8,4,5,4,-1,-1,-1,-1}, {12,4,6,4,-1,-1,-1,-1}}, "i - bVII - bVI - bVII (Rootless)" });
             dict.push_back({ "2. UK: Garage & Indie Pop", "Ambient Garage Stab", 4, {{0,8,0,12,0,0,0,0}, {8,4,3,12,0,0,0,0}, {12,4,6,12,-1,-1,-1,-1}}, "i - IV - bVII (So What)" });
 
-            // =========================================================
-            // 3. J-POP: Anime & Modern
-            // =========================================================
             dict.push_back({ "3. J-POP: Anime & Modern", "Royal Road (Shell)", 4, {{0,4,3,9,0,0,0,0}, {4,4,4,9,0,0,0,0}, {8,4,2,9,0,0,0,0}, {12,4,5,9,0,0,0,0}}, "IV - V - iii - vi" });
             dict.push_back({ "3. J-POP: Anime & Modern", "Just the Two of Us (Extended)", 4, {{0,4,5,4,-1,-1,-1,-1}, {4,4,4,4,0,1,0,0}, {8,4,0,4,0,0,0,0}, {12,2,6,4,-1,-1,-1,-1}, {14,2,2,4,-1,-1,-1,-1}}, "bVI - V7 - i - bVII - bIII" });
             dict.push_back({ "3. J-POP: Anime & Modern", "City Pop Night", 8, {{0,8,3,4,0,0,0,0}, {8,4,2,4,0,0,0,0}, {12,4,5,4,0,0,0,0}, {16,8,1,4,0,0,0,0}, {24,4,4,4,0,0,0,0}, {28,4,0,4,0,0,0,0}}, "IV - iii - vi - ii - V - I" });
@@ -445,9 +343,6 @@ namespace ChordMatrix
             dict.push_back({ "3. J-POP: Anime & Modern", "Chromatic J-Pop", 4, {{0,4,3,0,0,0,0,0}, {4,4,3,0,1,0,0,0}, {8,4,4,0,0,0,0,0}, {12,4,5,0,-1,-1,-1,-1}}, "IV - #IVdim - V - bVI" });
             dict.push_back({ "3. J-POP: Anime & Modern", "Jazz-Pop Fusion", 4, {{0,4,1,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,2,2,4,0,1,0,0}, {10,2,5,4,0,0,0,0}, {12,2,1,4,0,0,0,0}, {14,2,1,4,-1,-1,-1,-1}}, "ii - V - III - vi - ii - bII" });
 
-            // =========================================================
-            // 4. K-POP: Maximalism & Neo-Soul
-            // =========================================================
             dict.push_back({ "4. K-POP: Maximalism & Neo-Soul", "Lush Neo-Soul", 4, {{0,4,0,4,0,0,0,0}, {4,4,5,4,-1,0,0,0}, {8,4,1,4,0,0,0,0}, {12,4,4,4,0,0,0,0}}, "i - bVI - ii - V" });
             dict.push_back({ "4. K-POP: Maximalism & Neo-Soul", "Dramatic Bridge", 4, {{0,4,5,8,-1,-1,-1,-1}, {4,4,6,8,-1,-1,-1,-1}, {8,4,0,8,0,0,0,0}, {12,4,4,8,0,0,0,0}}, "bVI - bVII - i - v (Quartal)" });
             dict.push_back({ "4. K-POP: Maximalism & Neo-Soul", "Sophisticated Funk", 4, {{0,8,0,12,0,0,0,0}, {8,8,3,12,0,0,0,0}}, "i - IV (So What)" });
@@ -460,9 +355,6 @@ namespace ChordMatrix
             dict.push_back({ "4. K-POP: Maximalism & Neo-Soul", "Experimental Bridge", 4, {{0,4,5,8,-1,-1,-1,-1}, {4,4,6,8,-1,-1,-1,-1}, {8,4,0,8,0,0,0,0}, {12,4,1,8,-1,-1,-1,-1}}, "bVI - bVII - i - bII (Quartal)" });
             dict.push_back({ "4. K-POP: Maximalism & Neo-Soul", "Neo-Vintage Soul", 4, {{0,4,0,12,0,0,0,0}, {4,4,1,12,-1,-1,-1,-1}, {8,4,6,12,-1,-1,-1,-1}, {12,4,0,12,0,0,0,0}}, "i - bII - bVII - i (So What)" });
 
-            // =========================================================
-            // 5. Pop & Rock Basics
-            // =========================================================
             dict.push_back({ "5. Pop & Rock Basics", "I - IV (Plagal)", 2, {{0,4,0,0,0,0,0,0}, {4,4,3,0,0,0,0,0}}, "Iadd9 - IVM9" });
             dict.push_back({ "5. Pop & Rock Basics", "I - V (Authentic)", 2, {{0,4,0,0,0,0,0,0}, {4,4,4,0,0,0,0,0}}, "Iadd9 - V11" });
             dict.push_back({ "5. Pop & Rock Basics", "I - IV - V (Blues/Rock Base)", 4, {{0,4,0,0,0,0,0,0}, {4,4,3,0,0,0,0,0}, {8,8,4,0,0,0,0,0}}, "I - IV - V" });
@@ -477,9 +369,6 @@ namespace ChordMatrix
             dict.push_back({ "5. Pop & Rock Basics", "Rock Mixolydian", 4, {{0,4,0,0,0,0,0,0}, {4,4,2,0,-1,0,-1,-1}, {8,4,6,0,-1,0,-1,-1}, {12,4,3,0,0,0,0,0}}, "I - bIII - bVII - IV" });
             dict.push_back({ "5. Pop & Rock Basics", "Stadium Rock", 4, {{0,4,0,0,0,0,0,0}, {4,4,4,0,0,0,0,0}, {8,4,6,0,-1,0,-1,-1}, {12,4,3,0,0,0,0,0}}, "I - V - bVII - IV" });
 
-            // =========================================================
-            // 6. J-POP: Classic Royal Road
-            // =========================================================
             dict.push_back({ "6. J-POP: Classic Royal Road", "Royal Road Basic", 4, {{0,4,3,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,2,4,0,0,0,0}, {12,4,5,4,0,0,0,0}}, "IVmaj7 - V7 - iiim7 - vim7" });
             dict.push_back({ "6. J-POP: Classic Royal Road", "Royal Road with Sec Dom", 4, {{0,4,3,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,2,4,0,1,0,0}, {12,4,5,4,0,0,0,0}}, "IVmaj7 - V7 - III7 - vim7" });
             dict.push_back({ "6. J-POP: Classic Royal Road", "Royal Road with Passing Dim", 4, {{0,4,3,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,4,0,1,-1,-1,-2}, {12,4,5,4,0,0,0,0}}, "IVmaj7 - V7 - #Vdim7 - vim7" });
@@ -489,9 +378,6 @@ namespace ChordMatrix
             dict.push_back({ "6. J-POP: Classic Royal Road", "TK Progression", 4, {{0,4,5,4,0,0,0,0}, {4,4,3,4,0,0,0,0}, {8,4,4,4,0,0,0,0}, {12,4,0,4,0,0,0,0}}, "vim7 - IVmaj7 - V7 - Imaj7" });
             dict.push_back({ "6. J-POP: Classic Royal Road", "Anime Standard", 4, {{0,4,5,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,4,3,4,0,0,0,0}, {12,4,4,4,0,0,0,0}}, "vim7 - V7 - IVmaj7 - V7" });
 
-            // =========================================================
-            // 7. J-POP: Classic Marunouchi
-            // =========================================================
             dict.push_back({ "7. J-POP: Classic Marunouchi", "Basic (IV-III-vi-I)", 4, {{0,4,3,4,0,0,0,0}, {4,4,2,4,0,0,0,0}, {8,4,5,4,0,0,0,0}, {12,4,0,4,0,0,0,0}}, "IVM7 - iiim7 - vim7 - IM7" });
             dict.push_back({ "7. J-POP: Classic Marunouchi", "With Sec Dom", 4, {{0,4,3,4,0,0,0,0}, {4,4,2,4,0,1,0,0}, {8,4,5,4,0,0,0,0}, {12,4,0,4,0,0,0,0}}, "IVM7 - III7 - vim7 - IM7" });
             dict.push_back({ "7. J-POP: Classic Marunouchi", "Chromatic Descending", 4, {{0,4,3,4,0,0,0,0}, {4,4,2,4,0,1,0,0}, {8,4,2,0,-1,-1,-2,-3}, {12,4,1,4,0,0,0,0}}, "IVM7 - III7 - bIIIdim7 - iim7" });
@@ -499,9 +385,6 @@ namespace ChordMatrix
             dict.push_back({ "7. J-POP: Classic Marunouchi", "Minor Perspective", 4, {{0,4,5,4,-1,0,-1,-1}, {4,4,4,4,0,1,0,0}, {8,4,0,4,0,-1,0,-1}, {12,4,1,4,0,1,0,0}}, "bVIM7 - V7 - im7 - II7" });
             dict.push_back({ "7. J-POP: Classic Marunouchi", "Parallel Shift", 8, {{0,4,5,4,0,0,0,0}, {4,4,2,4,0,0,0,0}, {8,4,5,4,0,0,0,0}, {12,4,1,4,0,0,0,0}, {16,4,0,4,0,0,0,0}, {20,4,2,4,0,0,0,0}, {24,8,5,4,0,0,0,0}}, "vim - iiim - vim - iim - I - iiim" });
 
-            // =========================================================
-            // 8. Emotional / Modals
-            // =========================================================
             dict.push_back({ "8. Emotional / Modals", "Subdominant Minor (IV-iv-I)", 4, {{0,4,3,4,0,0,0,0}, {4,4,3,4,0,-1,0,-1}, {8,8,0,4,0,0,0,0}}, "IVmaj7 - ivm7 - Imaj7" });
             dict.push_back({ "8. Emotional / Modals", "Subdominant Minor 6th", 4, {{0,4,3,4,0,0,0,0}, {4,4,3,0,0,-1,0,-2}, {8,8,0,4,0,0,0,0}}, "IVmaj7 - iv6 - Imaj7" });
             dict.push_back({ "8. Emotional / Modals", "Descending 4-3-2-1", 4, {{0,4,3,4,0,0,0,0}, {4,4,2,4,0,0,0,0}, {8,4,1,4,0,0,0,0}, {12,4,0,4,0,0,0,0}}, "IVmaj7 - iiim7 - iim7 - Imaj7" });
@@ -510,9 +393,6 @@ namespace ChordMatrix
             dict.push_back({ "8. Emotional / Modals", "Line Cliche Minor", 4, {{0,4,5,0,0,0,0,-128}, {4,4,5,0,0,0,0,1}, {8,4,5,0,0,0,0,0}, {12,4,5,0,0,0,0,-1}}, "vim - vim(M7) - vim7 - vim6" });
             dict.push_back({ "8. Emotional / Modals", "Line Cliche Major", 4, {{0,4,0,0,0,0,0,-128}, {4,4,0,0,0,0,1,-128}, {8,4,0,0,0,0,2,-128}, {12,4,0,0,0,0,0,-1}}, "I - Iaug - I6 - I7" });
 
-            // =========================================================
-            // 9. Jazz & Blues
-            // =========================================================
             dict.push_back({ "9. Jazz & Blues", "Major 2-5-1", 4, {{0,4,1,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,8,0,4,0,0,0,0}}, "iim9 - V13 - Imaj9" });
             dict.push_back({ "9. Jazz & Blues", "Minor 2-5-1 (Half Dim to Alt)", 4, {{0,4,1,0,0,0,-1,0}, {4,4,4,0,0,1,0,0}, {8,8,5,4,0,0,0,0}}, "iim7b5 - V7alt - vim9" });
             dict.push_back({ "9. Jazz & Blues", "Rhythm Changes Base", 8, {{0,2,0,4,0,0,0,0}, {2,2,5,4,0,1,0,0}, {4,2,1,4,0,1,0,0}, {6,2,4,4,0,0,0,0}, {8,2,2,4,0,0,0,0}, {10,2,5,4,0,1,0,0}, {12,2,1,4,0,0,0,0}, {14,2,4,4,0,0,0,0}, {16,8,0,4,0,0,0,0}, {24,8,0,4,0,0,0,0}}, "I-VI7-II7-V7-iii-VI7-ii-V7" });
@@ -527,9 +407,6 @@ namespace ChordMatrix
             dict.push_back({ "9. Jazz & Blues", "Andalusian Cadence", 4, {{0,4,5,3,0,0,0,-128}, {4,4,4,3,0,0,0,-128}, {8,4,3,3,0,0,0,-128}, {12,4,2,3,0,1,0,-128}}, "vim - V - IV - III" });
             dict.push_back({ "9. Jazz & Blues", "Passing Diminished Ascent", 4, {{0,4,0,4,0,0,0,0}, {4,4,0,0,1,-1,-1,-2}, {8,4,1,4,0,0,0,0}, {12,4,4,4,0,0,0,0}}, "IM7 - #Idim7 - iim7 - V7" });
 
-            // =========================================================
-            // 10. Advanced Theory
-            // =========================================================
             dict.push_back({ "10. Advanced Theory", "IVmaj7 as ii Sub", 4, {{0,4,3,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,8,0,4,0,0,0,0}}, "IVM7 - V7 - IM7" });
             dict.push_back({ "10. Advanced Theory", "Related ii-V to vi", 4, {{0,4,6,0,0,0,-1,0}, {4,4,2,4,0,1,0,0}, {8,8,5,4,0,0,0,0}}, "viim7b5 - III7 - vim7" });
             dict.push_back({ "10. Advanced Theory", "Classic Deceptive (V7 -> vi)", 4, {{0,4,1,4,0,0,0,0}, {4,4,4,4,0,0,0,0}, {8,8,5,4,0,0,0,0}}, "iim7 - V7 - vim7" });
