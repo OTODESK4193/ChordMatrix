@@ -248,13 +248,15 @@ namespace ChordMatrix
         float chordGate = static_cast<float>(stepsPerBeat) * ppqPerStep;
         int targetStepStart = targetBar * stepsPerBar;
 
+        // ターゲット小節の頭に転調先のトニックをセット
         dest[targetStepStart].keyRoot = targetKey;
         dest[targetStepStart].scaleType = targetScale;
         dest[targetStepStart].chordDegree = 0;
-        dest[targetStepStart].voicingMode = 1; // Drop 2
+        dest[targetStepStart].voicingMode = 1; // 豊かなDrop 2をデフォルトに
         for (int v = 0; v < 7; ++v) { dest[targetStepStart].voices[v].isActive = (v < 4); }
         dest[targetStepStart].gateLength = chordGate * 2.0f;
 
+        // 直前の小節の「実際に鳴っていた最後のコード」を探してコンテキストを取得する
         int prevBar = targetBar - 1;
         int prevStepStart = prevBar * stepsPerBar;
         int b2 = stepsPerBar - 2 * stepsPerBeat;
@@ -267,6 +269,7 @@ namespace ChordMatrix
             if (hasActive) { contextStep = i; break; }
         }
 
+        // アプローチ用のスペース（2拍分）を確保
         float modStartPPQ = static_cast<float>(b2) * ppqPerStep;
         for (int i = 0; i < b2; ++i) {
             float currentStepPPQ = static_cast<float>(i) * ppqPerStep;
@@ -282,13 +285,15 @@ namespace ChordMatrix
         int s_V = prevStepStart + b1;
         bool targetIsMinor = (targetScale == 1 || targetScale == 2 || targetScale == 3 || targetScale == 5);
 
+        // =========================================================================
+        // コンテキスト適応型のアプローチ生成
+        // =========================================================================
         if (method >= 15 && method <= 17) {
             dest[s_V].voicingMode = 1; dest[s_V].gateLength = chordGate * 2.0f;
             if (method == NeoRiemannianP) { dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             else if (method == NeoRiemannianL) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 8) % 12 : (targetKey + 4) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             else if (method == NeoRiemannianR) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 3) % 12 : (targetKey + 9) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             for (int v = 0; v < 4; ++v) dest[s_V].voices[v].isActive = true;
-            return;
         }
         else if (method == ChromaticApproachDown) {
             dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 1;
@@ -316,16 +321,23 @@ namespace ChordMatrix
             dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
         }
 
-        if (b2 >= 0) {
-            for (int v = 0; v < 4; ++v) {
-                dest[s_ii].voices[v].isActive = true;
-                if (method != DirectDominant) dest[s_V].voices[v].isActive = true;
+        // Gate Lengthsの適用
+        if (method < 15) { // ネオリーマン以外の場合
+            if (b2 >= 0) {
+                for (int v = 0; v < 4; ++v) {
+                    dest[s_ii].voices[v].isActive = true;
+                    if (method != DirectDominant) dest[s_V].voices[v].isActive = true;
+                }
+                if (method == DirectDominant) { dest[s_ii].gateLength = chordGate * 2.0f; }
+                else { dest[s_ii].gateLength = chordGate; dest[s_V].gateLength = chordGate; }
             }
-            if (method == DirectDominant) { dest[s_ii].gateLength = chordGate * 2.0f; }
-            else { dest[s_ii].gateLength = chordGate; dest[s_V].gateLength = chordGate; }
         }
-    }
 
+        // =========================================================================
+        // ★ 究極の連携：生成されたばかりの転調コード群を含め、フレーズ全体にViterbi最適化をかける
+        // =========================================================================
+        VoicingEngine::optimizeStep(dest, targetStepStart, ppqPerStep, 0);
+    }
     const std::vector<ProgressionPreset>& ProgressionEngine::getProgressionDictionary() {
         static std::vector<ProgressionPreset> dict;
         if (dict.empty()) {
