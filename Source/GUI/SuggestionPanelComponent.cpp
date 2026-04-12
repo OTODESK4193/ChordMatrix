@@ -24,6 +24,7 @@ namespace ChordMatrix {
 
         currentSuggestions = ProgressionEngine::suggestNextChords(audioProcessor.sequenceData, currentStep, ppqPerStep);
 
+        // 生成されたスコアに従ってソート (10枠はProgressionEngine側で保証済み)
         std::sort(currentSuggestions.begin(), currentSuggestions.end(),
             [](const ChordSuggestion& a, const ChordSuggestion& b) {
                 return a.probability > b.probability;
@@ -39,13 +40,23 @@ namespace ChordMatrix {
             const auto& sug = currentSuggestions[i];
 
             juce::String degName = MusicTheory::getDegreeNames()[sug.targetDegree];
+            // bII 等の独自名称がある場合はスケールと度数から表示を上書き
+            if (sug.reasoning.contains("bII")) degName = "bII";
+            else if (sug.reasoning.contains("bIII")) degName = "bIII";
+            else if (sug.reasoning.contains("bVI")) degName = "bVI";
+            else if (sug.reasoning.contains("bVII")) degName = "bVII";
+
             juce::String labelText = degName + " (" + sug.reasoning + ")";
 
             auto* btn = new SuggestionButton(labelText);
 
-            juce::Colour btnColor = juce::Colours::cyan;
-            if (sug.reasoning.contains("Neo-Riemannian")) btnColor = juce::Colours::hotpink;
-            else if (sug.reasoning.contains("Target") || sug.reasoning.contains("Approach")) btnColor = juce::Colours::yellow;
+            juce::Colour btnColor = juce::Colours::cyan; // 王道
+            if (sug.reasoning.contains("Neo-Riemannian") || sug.reasoning.contains("Mediant") || sug.reasoning.contains("Neapolitan") || sug.reasoning.contains("Subtonic") || sug.reasoning.contains("Submediant") || sug.reasoning.contains("SD Minor") || sug.reasoning.contains("Dom Minor")) {
+                btnColor = juce::Colours::hotpink; // 独創・借用
+            }
+            else if (sug.reasoning.contains("Target") || sug.reasoning.contains("Approach")) {
+                btnColor = juce::Colours::yellow; // ターゲット逆算
+            }
 
             btn->setColour(juce::TextButton::buttonColourId, btnColor.withAlpha(0.2f));
             btn->setColour(juce::TextButton::textColourOffId, btnColor);
@@ -53,7 +64,7 @@ namespace ChordMatrix {
             btn->onLeftClick = [this, sug] { applySuggestion(sug); };
             btn->onRightClick = [this, sug] { previewSuggestion(sug); };
 
-            btn->setTooltip("Left Click: Apply & Next Step | Right Click: Preview Chord");
+            btn->setTooltip("Left Click: Apply | Right Click: Preview Chord");
 
             addAndMakeVisible(btn);
             suggestionButtons.add(btn);
@@ -69,7 +80,7 @@ namespace ChordMatrix {
         dummyStep.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
         dummyStep.scaleType = sug.targetScale;
         dummyStep.chordDegree = sug.targetDegree;
-        dummyStep.voicingMode = 4; // Rootless A でプレビュー
+        dummyStep.voicingMode = 4; // Rootless A で最も無難なプレビュー
         dummyStep.shift = audioProcessor.sequenceData[currentStep].shift;
 
         for (int v = 0; v < 4; ++v) dummyStep.voices[v].isActive = true;
@@ -86,26 +97,41 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::applySuggestion(const ChordSuggestion& sug) {
         if (currentStep < 0) return;
 
-        int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
-        int nextStep = currentStep + internalStepMultiplier;
-
         // =====================================================================
-        // ★修正1: 現在のコードが「次に挿入する場所」に被る場合、長さを切り詰める
+        // ★スマート挿入ロジック：現在のマスが「空」か「埋まっているか」をチェック
         // =====================================================================
-        float maxAllowedGate = static_cast<float>(internalStepMultiplier) * 0.25f;
-        if (audioProcessor.sequenceData[currentStep].gateLength > maxAllowedGate) {
-            audioProcessor.sequenceData[currentStep].gateLength = maxAllowedGate;
+        bool isCurrentEmpty = true;
+        for (int v = 0; v < 7; ++v) {
+            if (audioProcessor.sequenceData[currentStep].voices[v].isActive) {
+                isCurrentEmpty = false;
+                break;
+            }
         }
 
-        if (nextStep < TotalSteps) {
-            auto& sData = audioProcessor.sequenceData[nextStep];
+        int internalStepMultiplier = juce::roundToInt(currentPpqPerStep / 0.25f);
+        int targetStep = currentStep; // デフォルトは「現在選択中のマス」
+
+        if (!isCurrentEmpty) {
+            // 埋まっていれば「次のマス」へ進む
+            targetStep = currentStep + internalStepMultiplier;
+
+            // ついでに元のコードが長すぎる場合は切り詰める
+            float maxAllowedGate = static_cast<float>(internalStepMultiplier) * 0.25f;
+            if (audioProcessor.sequenceData[currentStep].gateLength > maxAllowedGate) {
+                audioProcessor.sequenceData[currentStep].gateLength = maxAllowedGate;
+            }
+        }
+
+        if (targetStep < TotalSteps) {
+            auto& sData = audioProcessor.sequenceData[targetStep];
 
             if (!sData.isLocked) {
+                // ベースのキーは前のコードから引き継ぐ
                 sData.keyRoot = audioProcessor.sequenceData[currentStep].keyRoot;
                 sData.chordDegree = sug.targetDegree;
                 sData.scaleType = sug.targetScale;
 
-                sData.voicingMode = 4;
+                sData.voicingMode = 4; // デフォルトは Rootless A
                 sData.gateLength = currentPpqPerStep;
 
                 for (int v = 0; v < 7; ++v) {
@@ -115,19 +141,20 @@ namespace ChordMatrix {
                 }
                 for (int v = 0; v < 4; ++v) sData.voices[v].isActive = true;
 
-                // =====================================================================
-                // ★修正2: 新しく挿入したコードの長さに被っている未来のゴミデータを消去
-                // =====================================================================
+                // 新しく挿入したコードの長さに被っている未来のゴミデータを消去
                 for (int i = 1; i < internalStepMultiplier; ++i) {
-                    if (nextStep + i < TotalSteps && !audioProcessor.sequenceData[nextStep + i].isLocked) {
-                        audioProcessor.sequenceData[nextStep + i] = {};
+                    if (targetStep + i < TotalSteps && !audioProcessor.sequenceData[targetStep + i].isLocked) {
+                        audioProcessor.sequenceData[targetStep + i] = {};
                     }
                 }
 
-                VoicingEngine::optimizeStep(audioProcessor.sequenceData, nextStep, 0.25f, 0);
-                audioProcessor.previewSequenceData[nextStep] = sData;
+                // ボイスリーディング最適化
+                VoicingEngine::optimizeStep(audioProcessor.sequenceData, targetStep, 0.25f, 0);
 
-                if (onSuggestionApplied) onSuggestionApplied(nextStep);
+                audioProcessor.previewSequenceData[targetStep] = sData;
+
+                // 適用完了後、UIのフォーカスを新しいステップに移動させる
+                if (onSuggestionApplied) onSuggestionApplied(targetStep);
             }
         }
     }
@@ -140,7 +167,7 @@ namespace ChordMatrix {
         g.setColour(juce::Colours::grey);
         g.setFont(14.0f);
 
-        g.drawText("AI CHORD SUGGESTIONS (L-Click: Insert & Next | R-Click: Preview)",
+        g.drawText("AI CHORD SUGGESTIONS (L-Click: Insert | R-Click: Preview)",
             10, 5, 500, 20, juce::Justification::centredLeft);
 
         if (currentSuggestions.empty()) {
@@ -151,10 +178,14 @@ namespace ChordMatrix {
     void SuggestionPanelComponent::resized() {
         if (suggestionButtons.isEmpty()) return;
 
+        // =====================================================================
+        // ★4行表示への最適化：ボタンの縦幅と余白を詰めて最大10〜12個を画面内に収める
+        // =====================================================================
         int startX = 10;
         int startY = 30;
-        int btnHeight = 25;
-        int spacing = 10;
+        int btnHeight = 22; // 以前の25pxから少しスリム化
+        int spacingX = 8;
+        int spacingY = 6;   // 縦の余白も少し詰める
         int maxRows = 4;
 
         int currentX = startX;
@@ -162,17 +193,18 @@ namespace ChordMatrix {
         int rowCount = 0;
 
         for (auto* btn : suggestionButtons) {
-            int btnWidth = 100 + btn->getButtonText().length() * 5;
+            int btnWidth = 90 + btn->getButtonText().length() * 4;
 
+            // 右端にぶつかったら改行
             if (currentX + btnWidth > getWidth() - 10) {
                 currentX = startX;
-                currentY += btnHeight + spacing;
+                currentY += btnHeight + spacingY;
                 rowCount++;
-                if (rowCount >= maxRows) break;
+                if (rowCount >= maxRows) break; // 4行を超えたら描画ストップ
             }
 
             btn->setBounds(currentX, currentY, btnWidth, btnHeight);
-            currentX += btnWidth + spacing;
+            currentX += btnWidth + spacingX;
         }
     }
 

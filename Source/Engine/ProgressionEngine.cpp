@@ -5,15 +5,13 @@
 #include <cmath>
 #include <map>
 #include <string>
+#include <tuple>
 
 namespace ChordMatrix
 {
-    // =========================================================================
-    // 内部エンジン用 数理モデル＆統計データ空間
-    // =========================================================================
     namespace AI_Models {
 
-        // --- 1. McGill Billboard Pop Bigram ---
+        // --- 1. Pop Bigram (McGill) ---
         static float getPopBigram(int fromDeg, int toDeg) {
             static const float matrix[7][7] = {
                 { 0.050f, 0.089f, 0.030f, 0.347f, 0.227f, 0.107f, 0.010f }, // I
@@ -28,67 +26,79 @@ namespace ChordMatrix
             return 0.01f;
         }
 
-        // --- 2. Trigram Bonus (n-2, n-1 -> n) ---
+        // --- 2. Trigram Bonus ---
         static float getTrigramBonus(int deg_n2, int deg_n1, int deg_n) {
-            float bonus = 0.0f;
-            auto query = std::make_pair(deg_n2, deg_n1);
+            float bonus = 1.0f; // 乗算ボーナス
 
-            static const std::map<std::pair<int, int>, std::map<int, float>> JPOP = {
-                {{3,4}, {{0, 0.35f}, {2, 0.25f}}}, // IV->V -> I or iii
-                {{5,3}, {{4, 0.30f}}},             // vi->IV -> V
-                {{0,3}, {{4, 0.25f}}},             // I->IV -> V
-                {{1,4}, {{0, 0.28f}}},             // ii->V -> I
-                {{0,5}, {{3, 0.22f}, {1, 0.15f}}}, // I->vi -> IV or ii
-                {{5,1}, {{4, 0.20f}}}              // vi->ii -> V
-            };
-
-            static const std::map<std::pair<int, int>, std::map<int, float>> JAZZ = {
-                {{1,4}, {{0, 0.45f}, {5, 0.15f}}}, // ii->V -> I or vi
-                {{3,1}, {{4, 0.30f}}},             // IV->ii -> V
-                {{2,5}, {{1, 0.22f}}}              // iii->vi -> ii
-            };
-
-            if (JPOP.count(query) && JPOP.at(query).count(deg_n)) bonus += JPOP.at(query).at(deg_n) * 0.6f;
-            if (JAZZ.count(query) && JAZZ.at(query).count(deg_n)) bonus += JAZZ.at(query).at(deg_n) * 0.4f;
+            // J-POP: IV-V-iii (433)
+            if (deg_n2 == 3 && deg_n1 == 4 && deg_n == 2) bonus = 1.5f;
+            // J-POP: V-iii-vi (536)
+            else if (deg_n2 == 4 && deg_n1 == 2 && deg_n == 5) bonus = 1.5f;
+            // Jazz: ii-V-I (251)
+            else if (deg_n2 == 1 && deg_n1 == 4 && deg_n == 0) bonus = 1.2f;
+            // Pop: I-V-vi (156)
+            else if (deg_n2 == 0 && deg_n1 == 4 && deg_n == 5) bonus = 1.4f;
+            // Pop: V-vi-IV (564)
+            else if (deg_n2 == 4 && deg_n1 == 5 && deg_n == 3) bonus = 1.4f;
 
             return bonus;
         }
 
         // --- 3. Metrical Position Weight ---
-        static float getMetricalWeight(int beatIdx, int chordFunc) {
-            // Beat: 0=B1, 1=B2, 2=B3, 3=B4
-            // Func: 0=Tonic(I,vi), 1=SubDom(IV,ii), 2=Dom(V,vii), 3=Other
-            static constexpr float TABLE[4][4] = {
-                { 1.50f, 1.10f, 1.20f, 0.80f }, // Beat 1
-                { 0.70f, 1.05f, 0.90f, 1.20f }, // Beat 2
-                { 1.25f, 1.10f, 1.15f, 0.90f }, // Beat 3
-                { 0.65f, 0.95f, 1.35f, 1.30f }  // Beat 4
-            };
-            return TABLE[beatIdx % 4][chordFunc];
+        static float getMetricalWeight(int beatIdx, int deg) {
+            // 強拍(1,3拍目=0,2), 弱拍(2,4拍目=1,3)
+            bool isStrong = (beatIdx == 0 || beatIdx == 2);
+            int func = (deg == 0 || deg == 5) ? 0 : // Tonic
+                (deg == 4 || deg == 6) ? 2 : // Dominant
+                1; // Subdominant / Other
+
+            if (func == 0) return isStrong ? 1.2f : 0.8f;
+            if (func == 2) return isStrong ? 0.8f : 1.2f;
+            return 1.0f;
         }
 
-        // --- 4. Tonnetz Distance (Simplified for PC Set) ---
-        static float getTonnetzDistance(int rootA, int rootB) {
+        // --- 4. Tonnetz Distance (Common Tones & Circle of Fifths) ---
+        static float getTonnetzDistance(const StepData& src, const StepData& dst) {
+            std::array<int, 7> pA = { 0 }, pB = { 0 };
+            int cA = VoicingEngine::getVoicedPitches(src, pA);
+            int cB = VoicingEngine::getVoicedPitches(dst, pB);
+
+            int common = 0;
+            bool usedB[7] = { false };
+            for (int i = 0; i < cA; ++i) {
+                for (int j = 0; j < cB; ++j) {
+                    if (!usedB[j] && (pA[i] % 12) == (pB[j] % 12)) {
+                        common++;
+                        usedB[j] = true;
+                        break;
+                    }
+                }
+            }
+            common = std::min(3, common);
+
+            auto getRootPC = [](const StepData& s) {
+                return (((MusicTheory::getBasePitch(s, 0) + s.shift) % 12) + 12) % 12;
+                };
+            int rA = getRootPC(src);
+            int rB = getRootPC(dst);
+
             static constexpr int FIFTH_POS[12] = { 0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5 };
-            int sd = std::abs(rootA - rootB);
-            float d_s = std::min(sd, 12 - sd) / 6.0f;
-            int fd = std::abs(FIFTH_POS[rootA] - FIFTH_POS[rootB]);
-            float d_f = std::min(fd, 12 - fd) / 6.0f;
-            return (0.6f * d_s) + (0.4f * d_f); // 0.0 (近) 〜 1.0 (遠)
+            int fd = std::abs(FIFTH_POS[rA] - FIFTH_POS[rB]);
+            int circleSteps = std::min(fd, 12 - fd);
+
+            // D = α*(3 - common) + β*circleDist
+            return 1.0f * (3.0f - static_cast<float>(common)) + 0.5f * static_cast<float>(circleSteps);
         }
 
         // --- 5. Modal Interchange Emotions (Pink Category) ---
-        struct ModalInfo { int deg; int scale; float bright; float dark; float surprise; std::string name; };
-        static const std::vector<ModalInfo> MODAL_TABLE = {
-            { 6, 0,  0.20f, 0.35f, 0.40f, "bVII (Modal/Rock)" }, // bVII Maj
-            { 5, 0, -0.40f, 0.65f, 0.50f, "bVI (Epic/Sad)" },    // bVI Maj
-            { 2, 0, -0.20f, 0.45f, 0.45f, "bIII (Dreamy)" },     // bIII Maj
-            { 1, 0, -0.55f, 0.75f, 0.85f, "bII (Neapolitan)" },  // bII Maj
-            { 3, 1, -0.30f, 0.55f, 0.35f, "iv (SD Minor)" },     // iv min
-            { 4, 1, -0.10f, 0.30f, 0.60f, "v (Dom Minor)" }      // v min
+        struct Emotion { int deg; int scale; float bright; float surprise; std::string name; };
+        static const std::vector<Emotion> BORROWED_EMOTIONS = {
+            { 1, 0, 0.3f, 0.9f, "bII (Neapolitan)" },
+            { 2, 0, 0.6f, 0.5f, "bIII (Mediant)" },
+            { 5, 0, 0.4f, 0.7f, "bVI (Submediant)" },
+            { 6, 0, 0.8f, 0.6f, "bVII (Subtonic)" }
         };
 
-        // 候補の統合構造体
         struct Cand {
             int deg; int scale; bool isBorrowed;
             float cyanScore = 0; float yellowScore = 0; float pinkScore = 0;
@@ -96,17 +106,20 @@ namespace ChordMatrix
         };
     }
 
-    // =========================================================================
-    // メイン推論エンジン
-    // =========================================================================
     std::vector<ChordSuggestion> ProgressionEngine::suggestNextChords(const std::array<StepData, TotalSteps>& seq, int currentStep, float ppqPerStep) {
         std::vector<ChordSuggestion> suggestions;
 
         // 1. 文脈の取得
         int prevIdx = -1, prev2Idx = -1, nextIdx = -1;
-        for (int s = currentStep - 1; s >= 0; --s) {
+        for (int s = currentStep; s >= 0; --s) {
             bool act = false; for (int v = 0; v < 7; ++v) if (seq[s].voices[v].isActive) act = true;
-            if (act) { if (prevIdx == -1) prevIdx = s; else { prev2Idx = s; break; } }
+            if (act) { prevIdx = s; break; }
+        }
+        if (prevIdx > 0) {
+            for (int s = prevIdx - 1; s >= 0; --s) {
+                bool act = false; for (int v = 0; v < 7; ++v) if (seq[s].voices[v].isActive) act = true;
+                if (act) { prev2Idx = s; break; }
+            }
         }
         for (int s = currentStep + 1; s < TotalSteps; ++s) {
             bool act = false; for (int v = 0; v < 7; ++v) if (seq[s].voices[v].isActive) act = true;
@@ -114,7 +127,8 @@ namespace ChordMatrix
         }
 
         const StepData& prev = (prevIdx >= 0) ? seq[prevIdx] : StepData{};
-        const StepData& prev2 = (prev2Idx >= 0) ? seq[prev2Idx] : StepData{};
+        int deg_n1 = (prevIdx >= 0) ? prev.chordDegree : -1;
+        int deg_n2 = (prev2Idx >= 0) ? seq[prev2Idx].chordDegree : -1;
         int curScale = (prevIdx >= 0) ? prev.scaleType : 0;
 
         // 拍位置の計算
@@ -122,63 +136,63 @@ namespace ChordMatrix
 
         std::vector<AI_Models::Cand> candidates;
 
-        // --- A. ダイアトニック候補の生成 ---
+        auto createDummyStep = [&](int d, int sc) {
+            StepData st = prev; st.chordDegree = d; st.scaleType = sc; st.voicingMode = 4;
+            for (int i = 0; i < 4; ++i) st.voices[i].isActive = true;
+            return st;
+            };
+
+        // --- A. ダイアトニック候補 (Cyan / Yellow) ---
         for (int deg = 0; deg < 7; ++deg) {
             AI_Models::Cand c; c.deg = deg; c.scale = curScale; c.isBorrowed = false;
 
-            // Base Score
-            float base = AI_Models::getPopBigram(prev.chordDegree, deg);
-            base += AI_Models::getTrigramBonus(prev2.chordDegree, prev.chordDegree, deg);
+            float score = (deg_n1 >= 0) ? AI_Models::getPopBigram(deg_n1, deg) : 1.0f;
+            score *= AI_Models::getTrigramBonus(deg_n2, deg_n1, deg);
+            score *= AI_Models::getMetricalWeight(beatIdx, deg);
 
-            int func = (deg == 0 || deg == 5) ? 0 : (deg == 3 || deg == 1) ? 1 : (deg == 4 || deg == 6) ? 2 : 3;
-            base *= AI_Models::getMetricalWeight(beatIdx, func);
+            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(deg, curScale)) : 0.0f;
 
-            c.tonnetzDist = AI_Models::getTonnetzDistance(prev.chordDegree, deg);
-            base += 0.15f * (1.0f - c.tonnetzDist);
+            // 距離ペナルティ (Dが大きいほどスコア低下)
+            c.cyanScore = score * std::exp(-c.tonnetzDist * 0.2f);
+            c.tag = "Diatonic (Markov+Trigram)";
 
-            c.cyanScore = base;
-            c.tag = "Diatonic Flow";
-
-            // Target Approach (Yellow)
             if (nextIdx >= 0) {
                 const auto& target = seq[nextIdx];
                 if (deg == (target.chordDegree + 3) % 7) {
-                    c.yellowScore = base + 0.8f; c.tag = "Target: Sec. Dominant";
+                    c.yellowScore = score * 1.5f; c.tag = "Target: Sec. Dominant";
                 }
                 else if (std::abs(deg - target.chordDegree) == 1) {
-                    c.yellowScore = base + 0.6f; c.tag = "Target: Chromatic Approach";
+                    c.yellowScore = score * 1.3f; c.tag = "Target: Chromatic Approach";
                 }
             }
             candidates.push_back(c);
         }
 
-        // --- B. モーダル・インターチェンジ候補の生成 (Pink) ---
-        for (const auto& mi : AI_Models::MODAL_TABLE) {
+        // --- B. モーダル・インターチェンジ候補 (Pink) ---
+        for (const auto& mi : AI_Models::BORROWED_EMOTIONS) {
             AI_Models::Cand c; c.deg = mi.deg; c.scale = mi.scale; c.isBorrowed = true;
 
-            c.tonnetzDist = AI_Models::getTonnetzDistance(prev.chordDegree, mi.deg);
+            c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(mi.deg, mi.scale)) : 0.0f;
 
-            // 感情スコア計算 (Pink優先度)
-            float emotionScore = (0.5f * mi.dark) + (0.5f * mi.surprise) + (0.2f * (1.0f - c.tonnetzDist));
-            c.pinkScore = emotionScore;
-            c.tag = "Neo-Riemannian / " + mi.name;
+            // SurpriseとBrightのバランスでエモーションスコアを計算
+            float emotionScore = (mi.surprise * 0.6f) + (mi.bright * 0.4f);
+            c.pinkScore = emotionScore * std::exp(-c.tonnetzDist * 0.1f);
+            c.tag = mi.name;
 
-            // Target Approach (Yellow) も兼ねる場合
             if (nextIdx >= 0) {
                 const auto& target = seq[nextIdx];
                 if (std::abs(mi.deg - target.chordDegree) == 1) {
-                    c.yellowScore = emotionScore + 0.5f; c.tag = "Target: Tritone / Chromatic";
+                    c.yellowScore = emotionScore * 1.2f; c.tag = "Target: Tritone / Chromatic";
                 }
             }
             candidates.push_back(c);
         }
 
         // ============================================================
-        // 9スロット・ポートフォリオ・アロケーター
+        // 10スロット・ポートフォリオ配分 (Cyan:4, Yellow:3, Pink:3)
         // ============================================================
         auto sortAndFilter = [](std::vector<AI_Models::Cand>& cands, int mode, int maxSlots) {
             std::vector<AI_Models::Cand> result;
-            std::vector<int> pickedDegs;
 
             std::sort(cands.begin(), cands.end(), [mode](const AI_Models::Cand& a, const AI_Models::Cand& b) {
                 if (mode == 0) return a.cyanScore > b.cyanScore;
@@ -189,33 +203,40 @@ namespace ChordMatrix
             for (const auto& c : cands) {
                 if (result.size() >= maxSlots) break;
                 float score = (mode == 0) ? c.cyanScore : (mode == 1) ? c.yellowScore : c.pinkScore;
-                if (score < 0.05f) continue;
+                if (score <= 0.01f) continue;
 
-                // 多様性フィルタ: 同じルートの連続選出を防ぐ
-                if (std::find(pickedDegs.begin(), pickedDegs.end(), c.deg) == pickedDegs.end()) {
-                    result.push_back(c);
-                    pickedDegs.push_back(c.deg);
+                // 多様性フィルタ: 同じルートがカテゴリ内に連続しないかチェック
+                bool similar = false;
+                for (const auto& r : result) {
+                    if (r.deg == c.deg) { similar = true; break; }
                 }
+                if (!similar) result.push_back(c);
             }
             return result;
             };
 
-        auto cyanList = sortAndFilter(candidates, 0, 3);
-        auto yellowList = sortAndFilter(candidates, 1, nextIdx >= 0 ? 3 : 0); // ターゲットがない時はYellow不要
+        auto cyanList = sortAndFilter(candidates, 0, 4);
+        auto yellowList = sortAndFilter(candidates, 1, nextIdx >= 0 ? 3 : 0);
         auto pinkList = sortAndFilter(candidates, 2, 3);
 
-        // 不足分をCyanから補填して最大9枠を目指す
-        while (cyanList.size() + yellowList.size() + pinkList.size() < 9 && cyanList.size() < 6) {
-            auto extraCyan = sortAndFilter(candidates, 0, cyanList.size() + 1);
-            if (extraCyan.size() == cyanList.size()) break;
+        // 不足分を補填して最大10枠へ
+        int total = cyanList.size() + yellowList.size() + pinkList.size();
+        if (total < 10) {
+            auto extraCyan = sortAndFilter(candidates, 0, 4 + (10 - total));
             cyanList = extraCyan;
         }
 
-        // 最終結合
         auto addSuggestions = [&](const std::vector<AI_Models::Cand>& list) {
             for (const auto& c : list) {
-                float finalScore = std::max({ c.cyanScore, c.yellowScore, c.pinkScore });
-                suggestions.push_back({ c.deg, c.scale, 0, finalScore, c.tag });
+                // すでに追加されているかチェック
+                bool exists = false;
+                for (const auto& s : suggestions) {
+                    if (s.targetDegree == c.deg && s.targetScale == c.scale) { exists = true; break; }
+                }
+                if (!exists) {
+                    float finalScore = std::max({ c.cyanScore, c.yellowScore, c.pinkScore });
+                    suggestions.push_back({ c.deg, c.scale, 0, finalScore, c.tag });
+                }
             }
             };
 
@@ -223,10 +244,12 @@ namespace ChordMatrix
         addSuggestions(yellowList);
         addSuggestions(pinkList);
 
+        // UI表示のために最大10枠で切り捨て
+        if (suggestions.size() > 10) suggestions.resize(10);
+
         return suggestions;
     }
 
-    // --- getModulationNames と applyModulation は既存のまま ---
     juce::StringArray ProgressionEngine::getModulationNames() {
         return {
             "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i",
