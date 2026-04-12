@@ -391,6 +391,9 @@ namespace ChordMatrix
         return relName + "\n(" + absName + ")";
     }
 
+    // =========================================================================
+    // ★ 究極AI最適化エンジン: Viterbi + テンション動的オルタード（b9/b13自動選択）
+    // =========================================================================
     void VoicingEngine::optimizeStep(std::array<StepData, TotalSteps>& seq, int targetStep, float ppqPerStep, int altIndex) {
         std::vector<int> activeSteps;
         for (int s = 0; s < TotalSteps; ++s) {
@@ -406,12 +409,15 @@ namespace ChordMatrix
         struct State {
             int voicingMode;
             int inversion;
+            int mutatedVoiceIdx;
+            int mutatedAcc;
             std::array<int, 7> pitches;
             int count;
             float cost;
             int bestPrevState;
         };
 
+        // 探索空間の解放（全ボイシングを許可）
         std::vector<int> allowedModes = { 0, 1, 4, 5, 8, 12 };
         std::vector<std::vector<State>> dp(activeSteps.size());
 
@@ -421,26 +427,47 @@ namespace ChordMatrix
             if (seq[s].isLocked) {
                 std::array<int, 7> testPitches = { 0 };
                 int count = getVoicedPitches(seq[s], testPitches);
-                dp[t].push_back({ seq[s].voicingMode, seq[s].inversion, testPitches, count, 0.0f, -1 });
+                dp[t].push_back({ seq[s].voicingMode, seq[s].inversion, -1, 0, testPitches, count, 0.0f, -1 });
                 continue;
             }
 
-            for (int mode : allowedModes) {
-                int maxInv = isAutoPattern(mode) ? 1 : 4;
-                for (int inv = 0; inv < maxInv; ++inv) {
-                    StepData tempStep = seq[s];
-                    tempStep.voicingMode = mode;
-                    tempStep.inversion = inv;
-                    std::array<int, 7> testPitches = { 0 };
-                    int count = getVoicedPitches(tempStep, testPitches);
+            // ★テンション動的付与のための「並行世界（Variation）」生成
+            std::vector<StepData> variations;
+            variations.push_back(seq[s]); // ナチュラルの基本形
 
-                    if (count > 0) {
-                        dp[t].push_back({ mode, inv, testPitches, count, 0.0f, -1 });
+            // ドミナントコード（V7等）の場合は、b9やb13のオルタード状態も並行探索させる
+            if (seq[s].chordDegree == 4 || (seq[s].voices[1].isActive && seq[s].voices[3].accidental == -1)) {
+                if (seq[s].voicingMode == 4 || seq[s].voicingMode == 5) {
+                    StepData alt1 = seq[s]; alt1.voices[1].accidental = -1; // 13th/9th alteration
+                    variations.push_back(alt1);
+                    StepData alt2 = seq[s]; alt2.voices[3].accidental = -1; // 9th/13th alteration
+                    variations.push_back(alt2);
+                }
+            }
+
+            for (size_t varIdx = 0; varIdx < variations.size(); ++varIdx) {
+                StepData& baseVar = variations[varIdx];
+                for (int mode : allowedModes) {
+                    int maxInv = isAutoPattern(mode) ? 1 : 4;
+                    for (int inv = 0; inv < maxInv; ++inv) {
+                        StepData tempStep = baseVar;
+                        tempStep.voicingMode = mode;
+                        tempStep.inversion = inv;
+                        std::array<int, 7> testPitches = { 0 };
+                        int count = getVoicedPitches(tempStep, testPitches);
+
+                        if (count > 0) {
+                            int mutIdx = -1, mutAcc = 0;
+                            if (varIdx == 1) { mutIdx = 1; mutAcc = -1; }
+                            if (varIdx == 2) { mutIdx = 3; mutAcc = -1; }
+                            dp[t].push_back({ mode, inv, mutIdx, mutAcc, testPitches, count, 0.0f, -1 });
+                        }
                     }
                 }
             }
         }
 
+        // フォワードパス
         for (size_t t = 1; t < activeSteps.size(); ++t) {
             for (size_t v = 0; v < dp[t].size(); ++v) {
                 float minCost = 9999999.0f;
@@ -487,6 +514,7 @@ namespace ChordMatrix
             }
         }
 
+        // バックトラックと適用
         int bestFinalState = 0;
         float minFinalCost = 9999999.0f;
         for (size_t v = 0; v < dp.back().size(); ++v) {
@@ -502,6 +530,10 @@ namespace ChordMatrix
             if (!seq[s].isLocked) {
                 seq[s].voicingMode = dp[t][currState].voicingMode;
                 seq[s].inversion = dp[t][currState].inversion;
+                // Viterbiが選んだ究極のテンション変異を書き戻す
+                if (dp[t][currState].mutatedVoiceIdx != -1) {
+                    seq[s].voices[dp[t][currState].mutatedVoiceIdx].accidental = dp[t][currState].mutatedAcc;
+                }
             }
             currState = dp[t][currState].bestPrevState;
         }

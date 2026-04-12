@@ -23,7 +23,7 @@ namespace ChordMatrix
         int numBars;
         std::vector<PresetChord> chords;
         juce::String previewText;
-        int recommendedScale = 0; // ★新規追加: 0=Major, 1=Minor など、プリセットごとの推奨スケール
+        int recommendedScale = 0;
     };
 
     struct ChordSuggestion {
@@ -55,7 +55,8 @@ namespace ChordMatrix
             PedalPointApproach = 14,
             NeoRiemannianP = 15,
             NeoRiemannianL = 16,
-            NeoRiemannianR = 17
+            NeoRiemannianR = 17,
+            PivotModulation = 18 // ★追加: 共通和音による究極の滑らかな転調
         };
 
         static void applyModulation(const std::array<StepData, TotalSteps>& source,

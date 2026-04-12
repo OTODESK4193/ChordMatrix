@@ -11,7 +11,6 @@ namespace ChordMatrix
 {
     namespace AI_Models {
 
-        // --- 1. Pop Bigram (McGill Billboard) ---
         static float getPopBigram(int fromDeg, int toDeg) {
             static const float matrix[7][7] = {
                 { 0.050f, 0.089f, 0.030f, 0.347f, 0.227f, 0.107f, 0.010f }, // I
@@ -26,7 +25,6 @@ namespace ChordMatrix
             return 0.01f;
         }
 
-        // --- 2. Trigram Bonus (多層N-gram) ---
         static float getTrigramBonus(int deg_n2, int deg_n1, int deg_n) {
             float bonus = 1.0f;
             if (deg_n2 == 3 && deg_n1 == 4 && deg_n == 2) bonus = 1.5f;
@@ -37,7 +35,6 @@ namespace ChordMatrix
             return bonus;
         }
 
-        // --- 3. Metrical Position Weight ---
         static float getMetricalWeight(int beatIdx, int deg) {
             bool isStrong = (beatIdx == 0 || beatIdx == 2);
             int func = (deg == 0 || deg == 5) ? 0 :
@@ -48,7 +45,6 @@ namespace ChordMatrix
             return 1.0f;
         }
 
-        // --- 4. Tonnetz Distance ---
         static float getTonnetzDistance(const StepData& src, const StepData& dst) {
             std::array<int, 7> pA = { 0 }, pB = { 0 };
             int cA = VoicingEngine::getVoicedPitches(src, pA);
@@ -76,13 +72,15 @@ namespace ChordMatrix
             return 1.0f * (3.0f - static_cast<float>(commonTones)) + 0.5f * static_cast<float>(circleSteps);
         }
 
-        // --- 5. Modal Interchange Emotions (Pink Category) ---
+        // ★追加: 現代的なModal HarmonyとComboアプローチの定義
         struct Emotion { int deg; int scale; int shift; float bright; float surprise; std::string name; };
         static const std::vector<Emotion> BORROWED_EMOTIONS = {
-            { 1, 0, -1, 0.3f, 0.9f, "bII (Neapolitan)" },
+            { 1, 0, -1, 0.3f, 0.9f, "bII (Phrygian M7)" },
             { 2, 0, -1, 0.6f, 0.5f, "bIII (Mediant)" },
             { 5, 0, -1, 0.4f, 0.7f, "bVI (Submediant)" },
-            { 6, 0, -1, 0.8f, 0.6f, "bVII (Subtonic)" }
+            { 6, 0, -1, 0.8f, 0.6f, "bVII (Subtonic)" },
+            { 3, 5,  0, 0.7f, 0.8f, "IV7 (Dorian Modal)" },  // メジャーキーにおけるIV7 (Dorian特徴音)
+            { 1, 0,  0, 0.8f, 0.9f, "II7 (Lydian Modal)" }   // メジャーキーにおけるII7 (Lydian特徴音、acc3rd必要)
         };
 
         struct Cand {
@@ -128,6 +126,7 @@ namespace ChordMatrix
             return st;
             };
 
+        // --- A. ダイアトニック候補 ---
         for (int deg = 0; deg < 7; ++deg) {
             AI_Models::Cand c; c.deg = deg; c.scale = curScale; c.shift = 0; c.isBorrowed = false;
 
@@ -143,41 +142,38 @@ namespace ChordMatrix
             else if (trigram > 1.1f) c.tag = "Jazz/Pop Schema";
             else c.tag = "Diatonic Flow";
 
-            if (nextIdx >= 0) {
-                const auto& target = seq[nextIdx];
-                if (deg == (target.chordDegree + 3) % 7) {
-                    c.yellowScore = score * 1.8f; c.tag = "Target: Sec. Dominant";
-                }
-                else if (std::abs(deg - target.chordDegree) == 1) {
-                    c.yellowScore = score * 1.5f; c.tag = "Target: Chromatic Appr.";
-                }
-            }
-            else {
-                if (deg == 4) { c.yellowScore = score * 1.2f; c.tag = "Proactive: Dom -> Tonic"; }
-                if (deg == 6) { c.yellowScore = score * 1.1f; c.tag = "Proactive: Dim -> Tonic"; }
-            }
             candidates.push_back(c);
         }
 
+        // --- B. モーダル・インターチェンジ (Pink) ---
         for (const auto& mi : AI_Models::BORROWED_EMOTIONS) {
             AI_Models::Cand c; c.deg = mi.deg; c.scale = mi.scale; c.shift = mi.shift; c.isBorrowed = true;
 
             c.tonnetzDist = (prevIdx >= 0) ? AI_Models::getTonnetzDistance(prev, createDummyStep(mi.deg, mi.scale, mi.shift)) : 0.0f;
-
             float emotionScore = (mi.surprise * 0.7f) + (mi.bright * 0.3f);
             c.pinkScore = emotionScore * std::exp(-c.tonnetzDist * 0.15f);
             c.tag = mi.name;
-
-            if (nextIdx >= 0) {
-                const auto& target = seq[nextIdx];
-                if (std::abs(mi.deg - target.chordDegree) == 1) {
-                    c.yellowScore = emotionScore * 1.5f; c.tag = "Target: Chromatic / Modal";
-                }
-            }
-            else {
-                if (mi.deg == 1) { c.yellowScore = emotionScore * 1.2f; c.tag = "Proactive: SubV7 -> Tonic"; }
-            }
             candidates.push_back(c);
+        }
+
+        // --- C. ★ターゲット・アウェア・コンボ (Yellow: 未来を見据えたアプローチ提案) ---
+        if (nextIdx >= 0) {
+            int targetDeg = seq[nextIdx].chordDegree;
+
+            // 1. Secondary Dominant (V7/Target)
+            AI_Models::Cand c1; c1.deg = (targetDeg + 4) % 7; c1.scale = 0; c1.shift = 0; c1.isBorrowed = false;
+            c1.yellowScore = 2.0f; c1.tag = "Combo: V7 -> Target";
+            candidates.push_back(c1);
+
+            // 2. Tritone Sub (SubV7/Target)
+            AI_Models::Cand c2; c2.deg = (targetDeg + 1) % 7; c2.scale = 0; c2.shift = -1; c2.isBorrowed = true;
+            c2.yellowScore = 1.9f; c2.tag = "Combo: SubV7 -> Target";
+            candidates.push_back(c2);
+
+            // 3. Passing Diminished (vii°7/Target)
+            AI_Models::Cand c3; c3.deg = targetDeg; c3.scale = 0; c3.shift = -1; c3.isBorrowed = true;
+            c3.yellowScore = 1.8f; c3.tag = "Combo: Passing Dim -> Target";
+            candidates.push_back(c3);
         }
 
         auto sortAndFilter = [](std::vector<AI_Models::Cand>& cands, int mode, int maxSlots, std::vector<int>& pickedIds) {
@@ -190,12 +186,11 @@ namespace ChordMatrix
                 });
 
             for (const auto& c : cands) {
-                if (result.size() >= maxSlots) break;
+                if (result.size() >= static_cast<size_t>(maxSlots)) break;
                 float score = (mode == 0) ? c.cyanScore : (mode == 1) ? c.yellowScore : c.pinkScore;
                 if (score <= 0.001f) continue;
 
                 int uniqueId = c.deg * 100 + c.shift;
-
                 if (std::find(pickedIds.begin(), pickedIds.end(), uniqueId) == pickedIds.end()) {
                     result.push_back(c);
                     pickedIds.push_back(uniqueId);
@@ -234,13 +229,12 @@ namespace ChordMatrix
         addSuggestions(pinkList);
 
         if (suggestions.size() > 10) suggestions.resize(10);
-
         return suggestions;
     }
 
-    juce::StringArray ProgressionEngine::getModulationNames() { return { "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i", "Backdoor (IVm7-bVII7)", "Passing Diminished", "Secondary Dominant", "Double ii-V", "Coltrane Matrix", "Extended Dominant", "Chromatic Up", "Chromatic Down", "Deceptive (V7->vi)", "Constant Structure", "Pedal Point", "Neo-Riemannian P", "Neo-Riemannian L", "Neo-Riemannian R" }; }
+    juce::StringArray ProgressionEngine::getModulationNames() { return { "Direct (V7 -> I)", "Standard ii-V-I", "Tritone Sub (bII7)", "Minor ii-V-i", "Backdoor (IVm7-bVII7)", "Passing Diminished", "Secondary Dominant", "Double ii-V", "Coltrane Matrix", "Extended Dominant", "Chromatic Up", "Chromatic Down", "Deceptive (V7->vi)", "Constant Structure", "Pedal Point", "Neo-Riemannian P", "Neo-Riemannian L", "Neo-Riemannian R", "Pivot (Common Chord)" }; }
 
-    // ★コンテキスト適応型モジュレーション
+    // ★コンテキスト適応型 + Pivot 転調
     void ProgressionEngine::applyModulation(const std::array<StepData, TotalSteps>& source, std::array<StepData, TotalSteps>& dest, int targetBar, int targetKey, int targetScale, int method, int stepsPerBar, int stepsPerBeat, float ppqPerStep) {
         dest = source;
         if (targetBar <= 0 || targetBar >= 16) return;
@@ -248,15 +242,13 @@ namespace ChordMatrix
         float chordGate = static_cast<float>(stepsPerBeat) * ppqPerStep;
         int targetStepStart = targetBar * stepsPerBar;
 
-        // ターゲット小節の頭に転調先のトニックをセット
         dest[targetStepStart].keyRoot = targetKey;
         dest[targetStepStart].scaleType = targetScale;
         dest[targetStepStart].chordDegree = 0;
-        dest[targetStepStart].voicingMode = 1; // 豊かなDrop 2をデフォルトに
+        dest[targetStepStart].voicingMode = 1;
         for (int v = 0; v < 7; ++v) { dest[targetStepStart].voices[v].isActive = (v < 4); }
         dest[targetStepStart].gateLength = chordGate * 2.0f;
 
-        // 直前の小節の「実際に鳴っていた最後のコード」を探してコンテキストを取得する
         int prevBar = targetBar - 1;
         int prevStepStart = prevBar * stepsPerBar;
         int b2 = stepsPerBar - 2 * stepsPerBeat;
@@ -269,7 +261,6 @@ namespace ChordMatrix
             if (hasActive) { contextStep = i; break; }
         }
 
-        // アプローチ用のスペース（2拍分）を確保
         float modStartPPQ = static_cast<float>(b2) * ppqPerStep;
         for (int i = 0; i < b2; ++i) {
             float currentStepPPQ = static_cast<float>(i) * ppqPerStep;
@@ -285,15 +276,19 @@ namespace ChordMatrix
         int s_V = prevStepStart + b1;
         bool targetIsMinor = (targetScale == 1 || targetScale == 2 || targetScale == 3 || targetScale == 5);
 
-        // =========================================================================
-        // コンテキスト適応型のアプローチ生成
-        // =========================================================================
-        if (method >= 15 && method <= 17) {
+        if (method == PivotModulation) {
+            // ★ ピボットコード転調: ターゲットキーのサブドミナント（IVまたはiv）を共通和音として借用する
+            dest[s_ii].keyRoot = targetKey; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 3; dest[s_ii].voicingMode = 1;
+            dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
+        }
+        else if (method >= 15 && method <= 17) {
             dest[s_V].voicingMode = 1; dest[s_V].gateLength = chordGate * 2.0f;
             if (method == NeoRiemannianP) { dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             else if (method == NeoRiemannianL) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 8) % 12 : (targetKey + 4) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             else if (method == NeoRiemannianR) { dest[s_V].keyRoot = targetIsMinor ? (targetKey + 3) % 12 : (targetKey + 9) % 12; dest[s_V].scaleType = targetIsMinor ? 0 : 5; dest[s_V].chordDegree = 0; }
             for (int v = 0; v < 4; ++v) dest[s_V].voices[v].isActive = true;
+            VoicingEngine::optimizeStep(dest, targetStepStart, ppqPerStep, 0);
+            return;
         }
         else if (method == ChromaticApproachDown) {
             dest[s_ii].keyRoot = (targetKey + 2) % 12; dest[s_ii].scaleType = targetScale; dest[s_ii].chordDegree = 0; dest[s_ii].voicingMode = 1;
@@ -321,23 +316,22 @@ namespace ChordMatrix
             dest[s_V].keyRoot = targetKey; dest[s_V].scaleType = 0; dest[s_V].chordDegree = 4; dest[s_V].voicingMode = 4;
         }
 
-        // Gate Lengthsの適用
-        if (method < 15) { // ネオリーマン以外の場合
-            if (b2 >= 0) {
-                for (int v = 0; v < 4; ++v) {
-                    dest[s_ii].voices[v].isActive = true;
-                    if (method != DirectDominant) dest[s_V].voices[v].isActive = true;
-                }
-                if (method == DirectDominant) { dest[s_ii].gateLength = chordGate * 2.0f; }
-                else { dest[s_ii].gateLength = chordGate; dest[s_V].gateLength = chordGate; }
+        if (b2 >= 0) {
+            for (int v = 0; v < 4; ++v) {
+                dest[s_ii].voices[v].isActive = true;
+                if (method != DirectDominant) dest[s_V].voices[v].isActive = true;
             }
+            if (method == DirectDominant) { dest[s_ii].gateLength = chordGate * 2.0f; }
+            else { dest[s_ii].gateLength = chordGate; dest[s_V].gateLength = chordGate; }
         }
 
-        // =========================================================================
-        // ★ 究極の連携：生成されたばかりの転調コード群を含め、フレーズ全体にViterbi最適化をかける
-        // =========================================================================
+        // ★究極の連携：転調後にViterbi大域的最適化を発動
         VoicingEngine::optimizeStep(dest, targetStepStart, ppqPerStep, 0);
     }
+
+    // =========================================================
+    // --- Dictionary ---
+    // =========================================================
     const std::vector<ProgressionPreset>& ProgressionEngine::getProgressionDictionary() {
         static std::vector<ProgressionPreset> dict;
         if (dict.empty()) {
