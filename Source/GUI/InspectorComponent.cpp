@@ -74,8 +74,6 @@ namespace ChordMatrix {
         addAndMakeVisible(btnOptimize);
         btnOptimize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
         btnOptimize.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffa500));
-
-        // ★修正: 押すたびに代替案インデックスを加算して、全く違う最適解を次々と提示する
         btnOptimize.onClick = [this] {
             optimizeAltIndex++;
             applyScope(scopeOptimize, [this](int s) {
@@ -107,18 +105,24 @@ namespace ChordMatrix {
         if (selectedStep < 0) return;
         int spb = getStepsPerBar();
 
+        auto safeSetter = [this, setterFunction](int s) {
+            if (!audioProcessor.sequenceData[s].isLocked) {
+                setterFunction(s);
+            }
+            };
+
         if (scopeType == 0) {
-            setterFunction(selectedStep);
+            safeSetter(selectedStep);
         }
         else if (scopeType == 1) {
-            int barStart = (selectedStep / spb) * spb;
+            int barStart = static_cast<int>(selectedStep / spb) * spb;
             for (int i = 0; i < spb; ++i) {
-                setterFunction(barStart + i);
+                safeSetter(barStart + i);
             }
         }
         else {
             for (int i = 0; i < ChordMatrix::TotalSteps; ++i) {
-                setterFunction(i);
+                safeSetter(i);
             }
         }
 
@@ -130,6 +134,9 @@ namespace ChordMatrix {
         repaint();
     }
 
+    // =====================================================================
+    // ★重要: エラーの根本原因だったこの関数が欠落しないようご注意ください
+    // =====================================================================
     void InspectorComponent::setSelectedStep(int stepIndex) {
         selectedStep = stepIndex;
         updateInspector();

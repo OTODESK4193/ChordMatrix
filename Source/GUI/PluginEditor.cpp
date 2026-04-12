@@ -35,9 +35,17 @@ ChordMatrixAudioProcessorEditor::ChordMatrixAudioProcessorEditor(ChordMatrixAudi
 
 ChordMatrixAudioProcessorEditor::~ChordMatrixAudioProcessorEditor() { stopTimer(); }
 
+// ------------------------------------------------------------
+// 変更後 (PluginEditor.cpp / timerCallback 内)
+// ------------------------------------------------------------
 void ChordMatrixAudioProcessorEditor::timerCallback() {
+
+    // ★追加: ヘッダーのコンボボックス等の値をタイマー駆動で安全に同期（重さ・バグ解消）
+    header.updateUI();
+
     if (audioProcessor.isPlaying && audioProcessor.currentGlobalStep >= 0) {
         int tsNum = (int)*audioProcessor.apvts.getRawParameterValue("timeSigNum");
+        // ...
         int tsDenIdx = (int)*audioProcessor.apvts.getRawParameterValue("timeSigDen");
         int tsDen = (tsDenIdx == 0) ? 4 : (tsDenIdx == 1) ? 8 : 16;
         int stepSizeIdx = (int)*audioProcessor.apvts.getRawParameterValue("stepSize");

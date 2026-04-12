@@ -10,12 +10,16 @@ namespace ChordMatrix {
         HeaderComponent(ChordMatrixAudioProcessor& p);
         ~HeaderComponent() override;
 
+        // ------------------------------------------------------------
+        // 変更後 (HeaderComponent.h)
+        // ------------------------------------------------------------
         void paint(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
 
-        std::function<void()> onRepaintRequest;
-        std::function<void(bool)> onFollowModeChanged;
+        void updateUI(); // ★新規追加: 安全なUI更新用メソッド
+
+        std::function<void()> onRepaintRequest;        std::function<void(bool)> onFollowModeChanged;
 
     private:
         ChordMatrixAudioProcessor& audioProcessor;
@@ -30,6 +34,7 @@ namespace ChordMatrix {
         void updateTimeSigLimits();
         void updateStepSizeMenu();
 
+        
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HeaderComponent)
     };
 

@@ -29,12 +29,10 @@ namespace ChordMatrix {
             };
         progressionBrowser.setVisible(false);
 
-        // ★新規追加: サジェストパネルのセットアップ
         addAndMakeVisible(suggestionPanel);
         suggestionPanel.onSuggestionApplied = [this](int newSelectedStep) {
             if (onStepSelected) onStepSelected(newSelectedStep);
             if (onRepaintRequest) onRepaintRequest();
-            // 適用後、さらに次のサジェストを更新する
             suggestionPanel.updateSuggestions(newSelectedStep, getPpqPerStep(), getStepsPerBar());
             };
     }
@@ -80,9 +78,6 @@ namespace ChordMatrix {
         setBtnStyle(btnModApply, juce::Colours::hotpink);
         setBtnStyle(btnModCancel, juce::Colours::grey);
 
-        // ------------------------------------------------------------
-        // 変更後 (MatrixGridComponent.cpp / setupModulationPanel内)
-        // ------------------------------------------------------------
         btnModPreview.onClick = [this] {
             int targetBar = modTargetBarMenu.getSelectedId() - 1;
             int targetKey = modKeyMenu.getSelectedId() - 1;
@@ -99,7 +94,6 @@ namespace ChordMatrix {
             audioProcessor.internalPPQ = static_cast<double>(std::max(0, targetBar - 1)) * static_cast<double>(getStepsPerBar()) * static_cast<double>(getPpqPerStep());
             audioProcessor.isInternalPlaying = true;
 
-            // ★追加: プレビュー時にもサジェストパネルを更新
             suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), getStepsPerBar());
             repaint();
             };
@@ -111,10 +105,10 @@ namespace ChordMatrix {
             isModulationPanelOpen = false;
             resized();
 
-            // ★追加: 確定時にもサジェストパネルを更新
             suggestionPanel.updateSuggestions(selectedStep, getPpqPerStep(), getStepsPerBar());
             if (onRepaintRequest) onRepaintRequest();
             };
+
         btnModCancel.onClick = [this] {
             audioProcessor.isPlayingModulationPreview.store(false);
             audioProcessor.isInternalPlaying = false;
@@ -187,14 +181,10 @@ namespace ChordMatrix {
         return { leftMargin + static_cast<float>(i % 8) * w, 555.0f + static_cast<float>(i / 8) * 35.0f, w - 8.0f, 30.0f };
     }
 
-    // ------------------------------------------------------------
-    // 変更後 (MatrixGridComponent.cpp / resized メソッド)
-    // ------------------------------------------------------------
     void MatrixGridComponent::resized() {
         bool showMod = isModulationPanelOpen && !isMemoryModeOpen && !isProgressionMode;
 
         if (showMod) {
-            // ★修正: サジェストパネルと同じ領域(Y=625〜)の中央に綺麗に整列
             int py = 675;
             modTargetBarMenu.setBounds(static_cast<int>(leftMargin) + 20, py, 85, 30);
             modKeyMenu.setBounds(static_cast<int>(leftMargin) + 115, py, 65, 30);
@@ -215,7 +205,6 @@ namespace ChordMatrix {
 
         progressionBrowser.setBounds(leftMargin, 155.0f - headerHeight - 35.0f, seqTotalWidth, 7.0f * cellHeight + headerHeight + 65.0f);
 
-        // ★修正: Modulation等の別パネルが開いている時は、サジェストパネルを隠して切り替える
         bool showSuggest = !isModulationPanelOpen && !isProgressionMode && !isMemoryModeOpen;
         suggestionPanel.setVisible(showSuggest);
         suggestionPanel.setBounds(leftMargin, 625.0f, seqTotalWidth, 150.0f);
@@ -288,27 +277,23 @@ namespace ChordMatrix {
             return;
         }
 
-        // ------------------------------------------------------------
-        // 変更後 (MatrixGridComponent.cpp の paint メソッド中盤)
-        // ------------------------------------------------------------
         g.setFont(12.0f);
         g.setColour(juce::Colours::grey);
         g.drawText("INV", 0, 155 - 30, static_cast<int>(leftMargin) - 10, 25, juce::Justification::centredRight);
 
-        // ★修正: 選択ステップのスケールに追従する動的Y軸ラベル
         int currentScaleType = audioProcessor.sequenceData[selectedStep].scaleType;
         int numNotes = MusicTheory::getScaleNoteCount(currentScaleType);
         auto intNames = MusicTheory::getScaleIntervalNames(currentScaleType);
 
         for (int v = 0; v < 7; ++v) {
-            int voiceIdx = 6 - v; // 下のレーンが Voice 0
+            int voiceIdx = 6 - v;
             int offsetDegrees = voiceIdx * 2;
             int octaves = offsetDegrees / numNotes;
             int scaleDegree = offsetDegrees % numNotes;
 
             juce::String vn = intNames[scaleDegree];
             if (octaves > 0) {
-                vn += " (+" + juce::String(octaves) + "8va)"; // オクターブのラップアラウンド表記
+                vn += " (+" + juce::String(octaves) + "8va)";
             }
 
             g.drawText(vn, 0, 155 + static_cast<int>(static_cast<float>(v) * cellHeight), static_cast<int>(leftMargin) - 10, static_cast<int>(cellHeight), juce::Justification::centredRight);
@@ -316,6 +301,7 @@ namespace ChordMatrix {
 
         g.setColour(juce::Colours::indianred);
         g.drawText("DEL", 0, 155 + static_cast<int>(7.0f * cellHeight), static_cast<int>(leftMargin) - 10, 30, juce::Justification::centredRight);
+
         int editBar = (int)*audioProcessor.apvts.getRawParameterValue("editBar");
         int stepsPerBar = getStepsPerBar();
         float ppqPerStep = getPpqPerStep();
@@ -348,6 +334,19 @@ namespace ChordMatrix {
             juce::Rectangle<float> rHeader = getStepHeaderBounds(s, stepW).withWidth(runW);
             g.setColour(isSelected ? activeColor.withAlpha(0.3f) : panelBg);
             g.fillRoundedRectangle(rHeader.reduced(1.0f), 4.0f);
+
+            // =======================================================================
+            // ★機能追加: ロックされているレーンの視覚化 (赤枠と[LOCKED]テキスト)
+            // =======================================================================
+            if (effStep.isLocked) {
+                juce::Rectangle<float> lockRect(startX, 155.0f - headerHeight - 35.0f, runW, 7.0f * cellHeight + headerHeight + 35.0f);
+                g.setColour(juce::Colours::red.withAlpha(0.6f));
+                g.drawRect(lockRect, 2.0f);
+
+                g.setColour(juce::Colours::red.withAlpha(0.9f));
+                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.drawText("[LOCKED]", rHeader.reduced(3.0f), juce::Justification::topRight);
+            }
 
             juce::String recognizedName = VoicingEngine::getRecognizedChordName(activeSeqData, effS, ppqPerStep);
             juce::Rectangle<int> textRect = rHeader.reduced(2.0f).toNearestInt();
@@ -530,11 +529,7 @@ namespace ChordMatrix {
             }
         }
 
-        // ------------------------------------------------------------
-        // 変更後 (MatrixGridComponent.cpp / paint メソッドの最後)
-        // ------------------------------------------------------------
         if (isModulationPanelOpen) {
-            // ★修正: サジェストパネルと全く同じサイズ・位置に背景枠を描画する
             juce::Rectangle<float> modArea(leftMargin, 625.0f, seqTotalWidth, 150.0f);
 
             g.setColour(juce::Colour(0xff222222));
@@ -550,7 +545,6 @@ namespace ChordMatrix {
                 g.drawFittedText(modText, static_cast<int>(leftMargin) + 20, 635, 350, 20, juce::Justification::centredLeft, 1, 0.5f);
             }
 
-            // 下部に説明文を追加
             g.setColour(juce::Colours::grey);
             g.setFont(juce::Font(12.0f, juce::Font::plain));
             g.drawText("Target Bar and Key/Scale will be modulated using the selected method.",
@@ -587,11 +581,11 @@ namespace ChordMatrix {
                 [safeThis](int result) {
                     if (safeThis != nullptr && result == 0) {
                         for (int s = 0; s < ChordMatrix::TotalSteps; ++s) {
+                            // ★一括クリアはロック状態を無視して完全に初期化する
                             safeThis->audioProcessor.sequenceData[s] = {};
                             safeThis->audioProcessor.previewSequenceData[s] = {};
                         }
                         if (safeThis->onStepSelected) safeThis->onStepSelected(safeThis->selectedStep);
-                        // サジェストもクリア
                         safeThis->suggestionPanel.updateSuggestions(-1, safeThis->getPpqPerStep(), safeThis->getStepsPerBar());
                         if (safeThis->onRepaintRequest) safeThis->onRepaintRequest();
                     }
@@ -617,6 +611,7 @@ namespace ChordMatrix {
                     juce::NativeMessageBox::showAsync(juce::MessageBoxOptions().withTitle("Clear Bar").withMessage("Clear Bar " + juce::String(i + 1) + "?").withButton("Yes").withButton("No"),
                         [safeThis, i, stepsPerBar](int result) {
                             if (safeThis != nullptr && result == 0) {
+                                // ★Barクリアもロック状態を無視して初期化する
                                 for (int s = i * stepsPerBar; s < (i + 1) * stepsPerBar; ++s) safeThis->audioProcessor.sequenceData[s] = {};
                                 if (safeThis->onRepaintRequest) safeThis->onRepaintRequest();
                             }
@@ -630,173 +625,190 @@ namespace ChordMatrix {
         float localX = static_cast<float>(e.x) - leftMargin;
         if (localX < 0) return;
 
-        if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
-            if (int localStep = static_cast<int>(localX / stepW); localStep < stepsPerBar) {
-                int effS = getEffectiveStep(editBar * stepsPerBar + localStep);
-                if (VoicingEngine::isAutoPattern(audioProcessor.sequenceData[effS].voicingMode) || audioProcessor.sequenceData[effS].voicingMode == 3) return;
+        // ローカルステップの特定
+        int localStep = static_cast<int>(localX / stepW);
+        if (localStep >= stepsPerBar) return;
 
-                int activeNotesCount = 0;
-                for (int v = 0; v < 7; ++v) {
-                    if (audioProcessor.sequenceData[effS].voices[v].isActive) activeNotesCount++;
-                }
+        int actS = editBar * stepsPerBar + localStep;
+        int effS = getEffectiveStep(actS);
 
-                if (activeNotesCount > 0) {
-                    if (e.mods.isLeftButtonDown()) audioProcessor.sequenceData[effS].inversion = (audioProcessor.sequenceData[effS].inversion + 1) % activeNotesCount;
-                    else if (e.mods.isRightButtonDown()) audioProcessor.sequenceData[effS].inversion = (audioProcessor.sequenceData[effS].inversion - 1 + activeNotesCount) % activeNotesCount;
-
-                    std::array<int, 7> vps = { 0 };
-                    int count = VoicingEngine::getVoicedPitches(audioProcessor.sequenceData[effS], vps);
-                    for (int i = 0; i < 7; ++i) audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
-                    audioProcessor.triggerPreview.store(true);
-                }
-
-                // ★サジェストパネル更新とステップ選択
-                suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
-                if (onStepSelected) onStepSelected(selectedStep = effS);
+        // =======================================================================
+        // ★機能追加: ロック切り替え (Ctrl+Click または Command+Click)
+        // DELボタン領域以外で機能させる
+        // =======================================================================
+        if (e.y < 155.0f + 7.0f * cellHeight) {
+            if (e.mods.isCtrlDown() || e.mods.isCommandDown()) {
+                audioProcessor.sequenceData[effS].isLocked = !audioProcessor.sequenceData[effS].isLocked;
+                repaint();
+                return; // ロック切り替え時は他の処理をスキップ
             }
+        }
+
+        // =======================================================================
+        // 既存のクリックイベント処理
+        // =======================================================================
+
+        if (e.y >= 155.0f - 30.0f && e.y < 155.0f - 5.0f) {
+            // ★変更操作はロック時にはブロックする
+            if (!audioProcessor.sequenceData[effS].isLocked) {
+                if (!VoicingEngine::isAutoPattern(audioProcessor.sequenceData[effS].voicingMode) && audioProcessor.sequenceData[effS].voicingMode != 3) {
+                    int activeNotesCount = 0;
+                    for (int v = 0; v < 7; ++v) {
+                        if (audioProcessor.sequenceData[effS].voices[v].isActive) activeNotesCount++;
+                    }
+
+                    if (activeNotesCount > 0) {
+                        if (e.mods.isLeftButtonDown()) audioProcessor.sequenceData[effS].inversion = (audioProcessor.sequenceData[effS].inversion + 1) % activeNotesCount;
+                        else if (e.mods.isRightButtonDown()) audioProcessor.sequenceData[effS].inversion = (audioProcessor.sequenceData[effS].inversion - 1 + activeNotesCount) % activeNotesCount;
+
+                        std::array<int, 7> vps = { 0 };
+                        int count = VoicingEngine::getVoicedPitches(audioProcessor.sequenceData[effS], vps);
+                        for (int i = 0; i < 7; ++i) audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
+                        audioProcessor.triggerPreview.store(true);
+                    }
+                }
+            }
+            suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
+            if (onStepSelected) onStepSelected(selectedStep = effS);
             return;
         }
 
         if (e.y >= 155.0f + 7.0f * cellHeight && e.y < 155.0f + 7.0f * cellHeight + 30.0f) {
             if (e.mods.isLeftButtonDown()) {
-                if (int localStep = static_cast<int>(localX / stepW); localStep < stepsPerBar) {
-                    int effS = getEffectiveStep(editBar * stepsPerBar + localStep);
-                    audioProcessor.sequenceData[effS] = {};
-
-                    suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
-                    if (onStepSelected) onStepSelected(selectedStep = effS);
-                    if (onRepaintRequest) onRepaintRequest();
-                }
+                // ★DELボタンによるクリアはロックを無視して初期化（ロックも外れる）
+                audioProcessor.sequenceData[effS] = {};
+                suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
+                if (onStepSelected) onStepSelected(selectedStep = effS);
+                if (onRepaintRequest) onRepaintRequest();
             }
             return;
         }
 
         if (e.y >= 155.0f - headerHeight - 35.0f && e.y < 155.0f - 35.0f) {
-            if (int localStep = static_cast<int>(localX / stepW); localStep < stepsPerBar) {
-                int effS = getEffectiveStep(editBar * stepsPerBar + localStep);
-                std::array<int, 7> vps = { 0 };
-                int count = VoicingEngine::getVoicedPitches(audioProcessor.sequenceData[effS], vps);
-                for (int i = 0; i < 7; ++i) audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
-                audioProcessor.triggerPreview.store(true);
+            std::array<int, 7> vps = { 0 };
+            int count = VoicingEngine::getVoicedPitches(audioProcessor.sequenceData[effS], vps);
+            for (int i = 0; i < 7; ++i) audioProcessor.previewNotes[i].store(i < count ? vps[i] : -1);
+            audioProcessor.triggerPreview.store(true);
 
-                // ★サジェストパネル更新とステップ選択
-                suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
-                if (onStepSelected) onStepSelected(selectedStep = effS);
-            }
+            suggestionPanel.updateSuggestions(effS, getPpqPerStep(), getStepsPerBar());
+            if (onStepSelected) onStepSelected(selectedStep = effS);
             return;
         }
 
         if (e.y >= 155.0f && e.y < 155.0f + 7.0f * cellHeight) {
-            for (int s = 0; s < stepsPerBar; ++s) {
-                int actS = editBar * stepsPerBar + s;
-                auto& effStep = audioProcessor.sequenceData[actS];
+            auto& effStep = audioProcessor.sequenceData[actS];
 
-                float safeGate = juce::jlimit(getPpqPerStep(), 16.0f, effStep.gateLength);
-                float desiredWidth = stepW * (safeGate / getPpqPerStep());
-                float maxWidth = seqTotalWidth - static_cast<float>(s) * stepW;
+            float safeGate = juce::jlimit(getPpqPerStep(), 16.0f, effStep.gateLength);
+            float desiredWidth = stepW * (safeGate / getPpqPerStep());
+            float maxWidth = seqTotalWidth - static_cast<float>(localStep) * stepW;
 
-                for (int v = 0; v < 7; ++v) {
-                    int voiceIdx = 6 - v;
-                    auto cell = getCellBounds(s, v, stepW).withWidth(juce::jmin(desiredWidth, maxWidth));
+            for (int v = 0; v < 7; ++v) {
+                int voiceIdx = 6 - v;
+                auto cell = getCellBounds(localStep, v, stepW).withWidth(juce::jmin(desiredWidth, maxWidth));
 
-                    bool isCellActive = false;
-                    int maxV = 0;
+                bool isCellActive = false;
+                int maxV = 0;
+                if (VoicingEngine::isAutoPattern(effStep.voicingMode)) {
+                    std::array<int, 7> tempPitches = { 0 };
+                    maxV = VoicingEngine::getPatternBPitches(effStep, tempPitches);
+                    isCellActive = (voiceIdx < maxV && effStep.voices[voiceIdx].isActive);
+                }
+                else {
+                    isCellActive = effStep.voices[voiceIdx].isActive;
+                }
+
+                if (isCellActive) {
+                    if (cell.contains(e.position)) {
+                        // ★ロック中はセルの変更操作をブロック
+                        if (effStep.isLocked) return;
+
+                        if (e.mods.isRightButtonDown()) {
+                            effStep.voices[voiceIdx].isActive = false;
+                            effStep.voices[voiceIdx].octaveShift = 0;
+                            effStep.voices[voiceIdx].accidental = 0;
+
+                            bool anyActive = false;
+                            for (int i = 0; i < 7; ++i) {
+                                if (effStep.voices[i].isActive) anyActive = true;
+                            }
+                            if (!anyActive) effStep = {};
+
+                            suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
+                            if (onStepSelected) onStepSelected(selectedStep = actS);
+                            return;
+                        }
+
+                        if (e.mods.isLeftButtonDown()) {
+                            if (e.position.x > cell.getRight() - 10.0f) {
+                                isDraggingGate = true; dragStep = actS; dragStartGate = safeGate; dragStartX = static_cast<float>(e.position.x); return;
+                            }
+                            else {
+                                isDraggingChord = true; dragStep = actS; dragStartX = static_cast<float>(e.position.x);
+                                int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
+                                audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
+
+                                bool isLowestActive = true;
+                                for (int iv = voiceIdx - 1; iv >= 0; --iv) {
+                                    if (effStep.voices[iv].isActive) { isLowestActive = false; break; }
+                                }
+                                audioProcessor.previewNotes[1].store((effStep.voicingMode == 3 && isLowestActive) ? juce::jlimit(0, 127, targetPitch - 12) : -1);
+                                for (int i = 2; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
+                                audioProcessor.triggerPreview.store(true);
+
+                                suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
+                                if (onStepSelected) onStepSelected(selectedStep = actS);
+                                return;
+                            }
+                        }
+                    }
+                }
+                else if (cell.contains(e.position) && e.mods.isLeftButtonDown()) {
+                    // ★ロック中はセルの変更操作をブロック
+                    if (effStep.isLocked) return;
+
                     if (VoicingEngine::isAutoPattern(effStep.voicingMode)) {
                         std::array<int, 7> tempPitches = { 0 };
-                        maxV = VoicingEngine::getPatternBPitches(effStep, tempPitches);
-                        isCellActive = (voiceIdx < maxV && effStep.voices[voiceIdx].isActive);
+                        int currentMaxV = VoicingEngine::getPatternBPitches(effStep, tempPitches);
+
+                        if (voiceIdx < currentMaxV) {
+                            bool wasEmpty = true;
+                            for (int i = 0; i < 7; ++i) {
+                                if (effStep.voices[i].isActive) wasEmpty = false;
+                            }
+                            if (wasEmpty) {
+                                for (int i = 0; i < currentMaxV; ++i) effStep.voices[i].isActive = true;
+                            }
+                            else {
+                                effStep.voices[voiceIdx].isActive = true;
+                            }
+
+                            effStep.voices[voiceIdx].octaveShift = 0;
+                            audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, VoicingEngine::getPitchForVoice(effStep, voiceIdx)));
+                            for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
+                            audioProcessor.triggerPreview.store(true);
+
+                            suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
+                            if (onStepSelected) onStepSelected(selectedStep = actS);
+                            return;
+                        }
                     }
                     else {
-                        isCellActive = effStep.voices[voiceIdx].isActive;
-                    }
-
-                    if (isCellActive) {
-                        if (cell.contains(e.position)) {
-                            if (e.mods.isRightButtonDown()) {
-                                effStep.voices[voiceIdx].isActive = false;
-                                effStep.voices[voiceIdx].octaveShift = 0;
-                                effStep.voices[voiceIdx].accidental = 0;
-
-                                bool anyActive = false;
-                                for (int i = 0; i < 7; ++i) {
-                                    if (effStep.voices[i].isActive) anyActive = true;
-                                }
-                                if (!anyActive) effStep = {};
-
-                                suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
-                                if (onStepSelected) onStepSelected(selectedStep = actS);
-                                return;
-                            }
-
-                            if (e.mods.isLeftButtonDown()) {
-                                if (e.position.x > cell.getRight() - 10.0f) {
-                                    isDraggingGate = true; dragStep = actS; dragStartGate = safeGate; dragStartX = static_cast<float>(e.position.x); return;
-                                }
-                                else {
-                                    isDraggingChord = true; dragStep = actS; dragStartX = static_cast<float>(e.position.x);
-                                    int targetPitch = VoicingEngine::getPitchForVoice(effStep, voiceIdx);
-                                    audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, targetPitch));
-
-                                    bool isLowestActive = true;
-                                    for (int iv = voiceIdx - 1; iv >= 0; --iv) {
-                                        if (effStep.voices[iv].isActive) { isLowestActive = false; break; }
-                                    }
-                                    audioProcessor.previewNotes[1].store((effStep.voicingMode == 3 && isLowestActive) ? juce::jlimit(0, 127, targetPitch - 12) : -1);
-                                    for (int i = 2; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
-                                    audioProcessor.triggerPreview.store(true);
-
-                                    suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
-                                    if (onStepSelected) onStepSelected(selectedStep = actS);
-                                    return;
-                                }
+                        bool isCovered = false;
+                        for (int prevS = actS - 1; prevS >= 0; --prevS) {
+                            if (audioProcessor.sequenceData[prevS].voices[voiceIdx].isActive && audioProcessor.sequenceData[prevS].gateLength > static_cast<float>(actS - prevS) * getPpqPerStep() + 0.001f) {
+                                isCovered = true;
+                                break;
                             }
                         }
-                    }
-                    else if (cell.contains(e.position) && e.mods.isLeftButtonDown()) {
-                        if (VoicingEngine::isAutoPattern(effStep.voicingMode)) {
-                            std::array<int, 7> tempPitches = { 0 };
-                            int currentMaxV = VoicingEngine::getPatternBPitches(effStep, tempPitches);
+                        if (!isCovered) {
+                            effStep.voices[voiceIdx].isActive = true;
+                            audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, VoicingEngine::getPitchForVoice(effStep, voiceIdx)));
+                            for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
+                            audioProcessor.triggerPreview.store(true);
 
-                            if (voiceIdx < currentMaxV) {
-                                bool wasEmpty = true;
-                                for (int i = 0; i < 7; ++i) {
-                                    if (effStep.voices[i].isActive) wasEmpty = false;
-                                }
-                                if (wasEmpty) {
-                                    for (int i = 0; i < currentMaxV; ++i) effStep.voices[i].isActive = true;
-                                }
-                                else {
-                                    effStep.voices[voiceIdx].isActive = true;
-                                }
-
-                                effStep.voices[voiceIdx].octaveShift = 0;
-                                audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, VoicingEngine::getPitchForVoice(effStep, voiceIdx)));
-                                for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
-                                audioProcessor.triggerPreview.store(true);
-
-                                suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
-                                if (onStepSelected) onStepSelected(selectedStep = actS);
-                                return;
-                            }
-                        }
-                        else {
-                            bool isCovered = false;
-                            for (int prevS = actS - 1; prevS >= 0; --prevS) {
-                                if (audioProcessor.sequenceData[prevS].voices[voiceIdx].isActive && audioProcessor.sequenceData[prevS].gateLength > static_cast<float>(actS - prevS) * getPpqPerStep() + 0.001f) {
-                                    isCovered = true;
-                                    break;
-                                }
-                            }
-                            if (!isCovered) {
-                                effStep.voices[voiceIdx].isActive = true;
-                                audioProcessor.previewNotes[0].store(juce::jlimit(0, 127, VoicingEngine::getPitchForVoice(effStep, voiceIdx)));
-                                for (int i = 1; i < 7; ++i) audioProcessor.previewNotes[i].store(-1);
-                                audioProcessor.triggerPreview.store(true);
-
-                                suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
-                                if (onStepSelected) onStepSelected(selectedStep = actS);
-                                return;
-                            }
+                            suggestionPanel.updateSuggestions(actS, getPpqPerStep(), getStepsPerBar());
+                            if (onStepSelected) onStepSelected(selectedStep = actS);
+                            return;
                         }
                     }
                 }
@@ -819,6 +831,9 @@ namespace ChordMatrix {
             for (int s = 0; s < stepsPerBar; ++s) {
                 int actS = editBar * stepsPerBar + s;
                 auto& effStep = audioProcessor.sequenceData[actS];
+
+                // ロック時はドラッグアイコン等を出さない
+                if (effStep.isLocked) continue;
 
                 int maxV = 0;
                 if (VoicingEngine::isAutoPattern(effStep.voicingMode)) {
@@ -872,6 +887,9 @@ namespace ChordMatrix {
         float stepW = seqTotalWidth / static_cast<float>(stepsPerBar);
 
         if (isDraggingGate && dragStep >= 0) {
+            // ロック時はドラッグ無効
+            if (audioProcessor.sequenceData[dragStep].isLocked) return;
+
             float deltaX = static_cast<float>(e.position.x) - dragStartX;
             float maxGate = 16.0f;
             int localS = dragStep % stepsPerBar;
@@ -891,8 +909,15 @@ namespace ChordMatrix {
             if (onRepaintRequest) onRepaintRequest();
         }
         else if (isDraggingChord && dragStep >= 0) {
+            // ロック時はドラッグ無効
+            if (audioProcessor.sequenceData[dragStep].isLocked) return;
+
             if (int deltaSteps = std::round((static_cast<float>(e.position.x) - dragStartX) / stepW); deltaSteps != 0) {
                 int targetStep = juce::jlimit(0, ChordMatrix::TotalSteps - 1, dragStep + deltaSteps);
+
+                // ドロップ先がロックされている場合はキャンセル
+                if (audioProcessor.sequenceData[targetStep].isLocked) return;
+
                 if (targetStep != dragStep) {
                     bool targetEmpty = true;
                     for (int v = 0; v < 7; ++v) {
@@ -941,6 +966,10 @@ namespace ChordMatrix {
                     bool isCellActive = VoicingEngine::isAutoPattern(effStep.voicingMode) ? (voiceIdx < maxV && effStep.voices[voiceIdx].isActive) : effStep.voices[voiceIdx].isActive;
 
                     if (cell.contains(e.position) && isCellActive) {
+
+                        // ★ロック中はホイール操作をブロック
+                        if (effStep.isLocked) return;
+
                         auto& voice = effStep.voices[voiceIdx];
 
                         if (VoicingEngine::isAutoPattern(effStep.voicingMode)) {

@@ -21,11 +21,14 @@ namespace ChordMatrix
         int keyRoot = 0;
         int chordDegree = 0;
         int scaleType = 0;
+        // ------------------------------------------------------------
+        // 変更後 (StepData.h の構造体末尾)
+        // ------------------------------------------------------------
         int inversion = 0;
         int voicingMode = 0;
         int shift = 0;
+        bool isLocked = false; // ★新規追加: コードレーンのロックフラグ
     };
-
     static constexpr int NumVoices = 7;
     static constexpr int MaxBars = 16;
     static constexpr int TotalSteps = 1024;

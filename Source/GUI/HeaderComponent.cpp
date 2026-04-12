@@ -107,6 +107,18 @@ namespace ChordMatrix {
         loopBarsMenu.setBounds(1160, 20, 60, 25);
     }
 
+    // ------------------------------------------------------------
+    // 変更後 (HeaderComponent.cpp / paintメソッド & 新規メソッド)
+    // ------------------------------------------------------------
+        // ★新規追加: タイマーから安全に呼ばれるUI更新処理
+    void HeaderComponent::updateUI() {
+        timeSigNumMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigNum"), juce::dontSendNotification);
+        timeSigDenMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigDen") + 1, juce::dontSendNotification);
+        stepSizeMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("stepSize") + 1, juce::dontSendNotification);
+        loopBarsMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("loopBars") + 1, juce::dontSendNotification);
+        tempoSlider.setValue(*audioProcessor.apvts.getRawParameterValue("tempo"), juce::dontSendNotification);
+    }
+
     void HeaderComponent::paint(juce::Graphics& g) {
         const auto bg = juce::Colour(0xff252525);
         const auto activeColor = juce::Colour(0xffffa500);
@@ -119,11 +131,7 @@ namespace ChordMatrix {
         g.setColour(textLight); g.setFont(juce::Font(22.0f, juce::Font::bold));
         g.drawText("CHORD MATRIX", 25, 0, 180, getHeight(), juce::Justification::centredLeft);
 
-        timeSigNumMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigNum"), juce::dontSendNotification);
-        timeSigDenMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("timeSigDen") + 1, juce::dontSendNotification);
-        stepSizeMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("stepSize") + 1, juce::dontSendNotification);
-        loopBarsMenu.setSelectedId((int)*audioProcessor.apvts.getRawParameterValue("loopBars") + 1, juce::dontSendNotification);
-        tempoSlider.setValue(*audioProcessor.apvts.getRawParameterValue("tempo"), juce::dontSendNotification);
+        // ★paint内の危険なsetSelectedId群は削除しました
 
         g.setColour(juce::Colours::grey); g.setFont(16.0f);
         g.drawText("/", 890, 20, 15, 25, juce::Justification::centred);
