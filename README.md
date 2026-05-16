@@ -78,7 +78,7 @@ ChordMatrix includes a static DSP-safe database of 55 distinctly mapped scale ty
 
 ## Installation
 
-1. Download the latest `ChordMatrix.vst3` from the [[Releases](https://github.com/your-username/ChordMatrix/releases/latest)] page.
+1. Download the latest `ChordMatrix.vst3` from the [[Releases](https://github.com/OTODESK4193/ChordMatrix/releases/latest)] page.
 2. Move it to your VST3 directory: `C:\Program Files\Common Files\VST3`
 3. Rescan plugins in your DAW.
 
