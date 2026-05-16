@@ -114,7 +114,7 @@ This project is free and open-source. It is distributed under the **GPLv3 Licens
 
 ## 📞 Support
 
-* **Social**: [@your-username](https://x.com/your-username)
+- **Social**: [@kijyoumusic](https://twitter.com/kijyoumusic)
 ---
 ---
 
