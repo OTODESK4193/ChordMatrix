@@ -1,10 +1,10 @@
 # ChordMatrix
 
 ![Release](https://img.shields.io/badge/release-v1.0-blue)
-![License](https://img.shields.io/badge/license-GPLv3-green)
+![License](https://img.shields.io/badge/license-AGPLv3-green)
 ![JUCE](https://img.shields.io/badge/JUCE-8.0.8-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
-![Downloads](https://img.shields.io/github/downloads/your-username/ChordMatrix.vst3/total.svg)
+![Downloads](https://img.shields.io/github/downloads/your-username/ChordMatrix/total.svg)
 
 ##
 <img src="Source/Assets/Screenshot.jpg" width="600">
@@ -100,7 +100,9 @@ While extreme care has been taken to ensure real-time safety and prevent audio d
 
 ## License
 
-This project is free and open-source. It is distributed under the **GPLv3 License** (inherited via the JUCE framework infrastructure). You are free to study, modify, and distribute the source code under the same terms.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3) - see the [LICENSE](LICENSE) file for details.
+This software is built using the **JUCE 8** framework. In accordance with JUCE 8's open-source licensing terms, this entire project is distributed under the AGPLv3.
+
 
 ## 🎓 Credits
 
