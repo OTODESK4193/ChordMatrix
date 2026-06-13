@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/license-AGPLv3-green)
 ![JUCE](https://img.shields.io/badge/JUCE-8.0.8-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
-![Downloads](https://img.shields.io/github/downloads/your-username/ChordMatrix/total.svg)
+![Downloads](https://img.shields.io/github/downloads/OTODESK4193/ChordMatrix/total.svg)
 
 ##
 <img src="Source/Assets/Screenshot.jpg" width="600">
